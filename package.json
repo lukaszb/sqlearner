@@ -19,7 +19,8 @@
     "build:win": "npm run build && electron-builder --win",
     "typecheck": "vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.vitest.json",
     "lint": "eslint . --ext .ts,.vue",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.62.1",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.14.1",

@@ -187,7 +187,7 @@ export async function prepareDatabase(window: BrowserWindow): Promise<SessionSum
   return readySession
 }
 
-function getTableColumns(db: Database.Database, tableName: string): string[] {
+export function getTableColumns(db: Database.Database, tableName: string): string[] {
   const columns = db.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all() as { name: string }[]
   return columns.map((column) => column.name)
 }

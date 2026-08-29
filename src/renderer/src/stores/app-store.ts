@@ -31,12 +31,19 @@ function createQueryTab(index: number): SqlQueryTab {
 export const useAppStore = defineStore('app', {
   state: (): AppState => ({
     sessions: [],
+    activeSessionId: undefined,
     activeView: 'database',
     tables: [],
+    selectedTable: undefined,
+    tablePreview: undefined,
     queryTabs: [createQueryTab(1)],
+    activeQueryTabId: undefined,
+    progress: undefined,
     loading: false,
     databaseLoading: false,
-    electronReady: Boolean(window.sqlearner)
+    databaseError: undefined,
+    electronReady: Boolean(window.sqlearner),
+    error: undefined
   }),
   getters: {
     activeSession: (state) => state.sessions.find((session) => session.id === state.activeSessionId),
@@ -62,8 +69,15 @@ export const useAppStore = defineStore('app', {
     async refreshSessions() {
       if (!window.sqlearner) return
       this.sessions = await window.sqlearner.listSessions()
-      if (!this.activeSessionId && this.sessions[0]) {
+      const activeSessionExists = this.sessions.some((session) => session.id === this.activeSessionId)
+
+      if ((!this.activeSessionId || !activeSessionExists) && this.sessions[0]) {
         await this.selectSession(this.sessions[0].id)
+      } else if (!this.sessions[0]) {
+        this.activeSessionId = undefined
+        this.tables = []
+        this.tablePreview = undefined
+        this.selectedTable = undefined
       }
     },
     async prepareDatabase() {
@@ -89,6 +103,15 @@ export const useAppStore = defineStore('app', {
       this.activeSessionId = sessionId
       await this.loadTables()
     },
+    async selectView(view: 'database' | 'queries') {
+      this.activeView = view
+      if (view === 'queries' && this.queryTabs.length === 0) {
+        this.addQueryTab()
+      }
+      if (view === 'database' && this.activeSessionId && this.tables.length === 0) {
+        await this.loadTables()
+      }
+    },
     async openSessionFolder(sessionId: string) {
       if (!window.sqlearner) return
       await window.sqlearner.openSessionFolder(sessionId)
@@ -103,16 +126,31 @@ export const useAppStore = defineStore('app', {
       }
       await this.refreshSessions()
     },
-    async loadTables() {
+    async loadTables(options: { clearBeforeLoad?: boolean } = {}) {
       if (!this.activeSessionId || !window.sqlearner) return
+      const previousSelectedTable = this.selectedTable
       this.databaseLoading = true
       this.databaseError = undefined
-      this.tables = []
-      this.tablePreview = undefined
-      this.selectedTable = undefined
+      if (options.clearBeforeLoad) {
+        this.tables = []
+        this.tablePreview = undefined
+        this.selectedTable = undefined
+      }
       try {
-        this.tables = await window.sqlearner.listTables(this.activeSessionId)
-        if (this.tables[0]) await this.selectTable(this.tables[0].name)
+        const nextTables = await window.sqlearner.listTables(this.activeSessionId)
+        this.tables = nextTables
+        if (nextTables[0]) {
+          const tableName = previousSelectedTable && nextTables.some((table) => table.name === previousSelectedTable)
+            ? previousSelectedTable
+            : nextTables[0].name
+          const table = nextTables.find((item) => item.name === tableName)
+          this.selectedTable = tableName
+          this.tablePreview = table ? { columns: table.columns, rows: [] } : undefined
+          await this.selectTable(tableName)
+        } else {
+          this.tablePreview = undefined
+          this.selectedTable = undefined
+        }
       } catch (error) {
         this.databaseError = error instanceof Error ? error.message : 'Failed to open database'
       } finally {
@@ -122,6 +160,8 @@ export const useAppStore = defineStore('app', {
     async selectTable(tableName: string) {
       if (!this.activeSessionId || !window.sqlearner) return
       this.selectedTable = tableName
+      const table = this.tables.find((item) => item.name === tableName)
+      this.tablePreview = table ? { columns: table.columns, rows: [] } : this.tablePreview
       this.databaseLoading = true
       this.databaseError = undefined
       try {
