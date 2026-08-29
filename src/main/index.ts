@@ -1,0 +1,74 @@
+import { app, BrowserWindow, ipcMain } from 'electron'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { ipcChannels } from '@shared/ipc.js'
+import type { SessionSummary } from '@shared/types.js'
+import { listSessions, openSessionFolder, deleteSession } from './services/session-service.js'
+import { listTables, prepareDatabase, previewTable, runQuery } from './services/database-service.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+let mainWindow: BrowserWindow | undefined
+
+function findSessionOrThrow(sessions: SessionSummary[], sessionId: string): SessionSummary {
+  const session = sessions.find((item) => item.id === sessionId)
+  if (!session) throw new Error(`Session ${sessionId} was not found`)
+  return session
+}
+
+async function createWindow(): Promise<void> {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 980,
+    minHeight: 640,
+    title: 'SQLearner',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  } else {
+    await mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  }
+}
+
+function registerIpc(): void {
+  ipcMain.handle(ipcChannels.sessionsList, () => listSessions())
+  ipcMain.handle(ipcChannels.sessionsPrepare, async () => {
+    if (!mainWindow) throw new Error('Main window is not ready')
+    return prepareDatabase(mainWindow)
+  })
+  ipcMain.handle(ipcChannels.sessionsOpenFolder, (_event, sessionId: string) => openSessionFolder(sessionId))
+  ipcMain.handle(ipcChannels.sessionsDelete, (_event, sessionId: string) => deleteSession(sessionId))
+  ipcMain.handle(ipcChannels.databaseTables, async (_event, sessionId: string) => {
+    const session = findSessionOrThrow(await listSessions(), sessionId)
+    return listTables(session)
+  })
+  ipcMain.handle(ipcChannels.databasePreview, async (_event, sessionId: string, tableName: string) => {
+    const session = findSessionOrThrow(await listSessions(), sessionId)
+    return previewTable(session, tableName)
+  })
+  ipcMain.handle(ipcChannels.queryRun, async (_event, sessionId: string, sql: string) => {
+    const session = findSessionOrThrow(await listSessions(), sessionId)
+    return runQuery(session, sql)
+  })
+}
+
+app.whenReady().then(async () => {
+  registerIpc()
+  await createWindow()
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
