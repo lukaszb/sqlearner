@@ -1,7 +1,7 @@
 import { app, shell } from 'electron'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { SessionSummary } from '@shared/types.js'
+import type { SessionSummary } from '@/shared/types.js'
 
 const manifestName = 'session.json'
 

@@ -1,13 +1,13 @@
 import Database from 'better-sqlite3'
 import AdmZip from 'adm-zip'
 import type { BrowserWindow } from 'electron'
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import https from 'node:https'
 import path from 'node:path'
 import { parse } from 'csv-parse/sync'
-import { ipcChannels } from '@shared/ipc.js'
-import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@shared/types.js'
+import { ipcChannels } from '@/shared/ipc.js'
+import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types.js'
 import { createPreparingSession, markSessionUsed, saveSession } from './session-service.js'
 
 const kaggleDatasetUrl = 'https://www.kaggle.com/api/v1/datasets/download/olistbr/brazilian-ecommerce'
@@ -187,7 +187,16 @@ export async function prepareDatabase(window: BrowserWindow): Promise<SessionSum
   return readySession
 }
 
+function getTableColumns(db: Database.Database, tableName: string): string[] {
+  const columns = db.prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`).all() as { name: string }[]
+  return columns.map((column) => column.name)
+}
+
 function openSessionDatabase(session: SessionSummary): Database.Database {
+  if (!existsSync(session.databasePath)) {
+    throw new Error(`Database file is missing: ${session.databasePath}`)
+  }
+
   return new Database(session.databasePath, { readonly: true })
 }
 
@@ -196,7 +205,8 @@ export async function listTables(session: SessionSummary): Promise<TableSummary[
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]
   const result = tables.map((table) => ({
     name: table.name,
-    rowCount: (db.prepare(`SELECT COUNT(*) as count FROM ${quoteIdentifier(table.name)}`).get() as { count: number }).count
+    rowCount: (db.prepare(`SELECT COUNT(*) as count FROM ${quoteIdentifier(table.name)}`).get() as { count: number }).count,
+    columns: getTableColumns(db, table.name)
   }))
   db.close()
   return result
@@ -205,7 +215,7 @@ export async function listTables(session: SessionSummary): Promise<TableSummary[
 export async function previewTable(session: SessionSummary, tableName: string): Promise<TablePreview> {
   const db = openSessionDatabase(await markSessionUsed(session))
   const rows = db.prepare(`SELECT * FROM ${quoteIdentifier(tableName)} LIMIT 100`).all() as Record<string, unknown>[]
-  const columns = rows[0] ? Object.keys(rows[0]) : []
+  const columns = getTableColumns(db, tableName)
   db.close()
   return { columns, rows }
 }

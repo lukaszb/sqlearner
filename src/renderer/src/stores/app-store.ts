@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { ProgressUpdate, QueryResult, SessionSummary, SqlQueryTab, TablePreview, TableSummary } from '@shared/types'
+import type { ProgressUpdate, QueryResult, SessionSummary, SqlQueryTab, TablePreview, TableSummary } from '@/shared/types'
 
 interface AppState {
   sessions: SessionSummary[]
@@ -12,6 +12,8 @@ interface AppState {
   activeQueryTabId?: string
   progress?: ProgressUpdate
   loading: boolean
+  databaseLoading: boolean
+  databaseError?: string
   electronReady: boolean
   error?: string
 }
@@ -33,6 +35,7 @@ export const useAppStore = defineStore('app', {
     tables: [],
     queryTabs: [createQueryTab(1)],
     loading: false,
+    databaseLoading: false,
     electronReady: Boolean(window.sqlearner)
   }),
   getters: {
@@ -49,8 +52,12 @@ export const useAppStore = defineStore('app', {
       window.sqlearner.onProgress((update) => {
         this.progress = update
       })
-      await this.refreshSessions()
-      this.activeQueryTabId = this.queryTabs[0]?.id
+      try {
+        await this.refreshSessions()
+        this.activeQueryTabId = this.queryTabs[0]?.id
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Failed to initialize SQLearner'
+      }
     },
     async refreshSessions() {
       if (!window.sqlearner) return
@@ -98,13 +105,32 @@ export const useAppStore = defineStore('app', {
     },
     async loadTables() {
       if (!this.activeSessionId || !window.sqlearner) return
-      this.tables = await window.sqlearner.listTables(this.activeSessionId)
-      if (this.tables[0]) await this.selectTable(this.tables[0].name)
+      this.databaseLoading = true
+      this.databaseError = undefined
+      this.tables = []
+      this.tablePreview = undefined
+      this.selectedTable = undefined
+      try {
+        this.tables = await window.sqlearner.listTables(this.activeSessionId)
+        if (this.tables[0]) await this.selectTable(this.tables[0].name)
+      } catch (error) {
+        this.databaseError = error instanceof Error ? error.message : 'Failed to open database'
+      } finally {
+        this.databaseLoading = false
+      }
     },
     async selectTable(tableName: string) {
       if (!this.activeSessionId || !window.sqlearner) return
       this.selectedTable = tableName
-      this.tablePreview = await window.sqlearner.previewTable(this.activeSessionId, tableName)
+      this.databaseLoading = true
+      this.databaseError = undefined
+      try {
+        this.tablePreview = await window.sqlearner.previewTable(this.activeSessionId, tableName)
+      } catch (error) {
+        this.databaseError = error instanceof Error ? error.message : 'Failed to load table preview'
+      } finally {
+        this.databaseLoading = false
+      }
     },
     addQueryTab() {
       const tab = createQueryTab(this.queryTabs.length + 1)

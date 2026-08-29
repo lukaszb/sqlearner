@@ -1,4 +1,4 @@
-import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@shared/types'
+import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types'
 
 interface SQLearnerApi {
   listSessions: () => Promise<SessionSummary[]>

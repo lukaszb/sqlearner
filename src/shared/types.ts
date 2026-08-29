@@ -19,6 +19,7 @@ export interface ProgressUpdate {
 export interface TableSummary {
   name: string
   rowCount: number
+  columns: string[]
 }
 
 export interface TablePreview {

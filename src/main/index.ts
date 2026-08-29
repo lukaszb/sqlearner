@@ -1,8 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ipcChannels } from '@shared/ipc.js'
-import type { SessionSummary } from '@shared/types.js'
+import { ipcChannels } from '@/shared/ipc.js'
+import type { SessionSummary } from '@/shared/types.js'
 import { listSessions, openSessionFolder, deleteSession } from './services/session-service.js'
 import { listTables, prepareDatabase, previewTable, runQuery } from './services/database-service.js'
 

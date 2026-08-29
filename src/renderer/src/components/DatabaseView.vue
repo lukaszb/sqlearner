@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { useAppStore } from '@renderer/stores/app-store'
+import { useAppStore } from '@/renderer/src/stores/app-store'
 
 const store = useAppStore()
 const { selectedTable, tablePreview, tables } = storeToRefs(store)

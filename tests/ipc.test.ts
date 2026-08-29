@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ipcChannels } from '@shared/ipc'
+import { ipcChannels } from '@/shared/ipc'
 
 describe('ipcChannels', () => {
   it('uses explicit namespaced channel names', () => {

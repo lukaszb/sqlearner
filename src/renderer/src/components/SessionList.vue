@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SessionSummary } from '@shared/types'
+import type { SessionSummary } from '@/shared/types'
 
 defineProps<{
   sessions: SessionSummary[]
