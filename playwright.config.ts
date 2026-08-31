@@ -7,12 +7,12 @@ export default defineConfig({
     timeout: 5_000
   },
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:5175',
     trace: 'on-first-retry'
   },
   webServer: {
-    command: 'npm run dev:renderer',
-    url: 'http://127.0.0.1:5173',
+    command: 'vite --host 127.0.0.1 --port 5175 --strictPort',
+    url: 'http://127.0.0.1:5175',
     reuseExistingServer: false,
     timeout: 30_000
   },

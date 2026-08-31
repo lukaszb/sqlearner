@@ -1,16 +1,15 @@
 import Database from 'better-sqlite3'
-import AdmZip from 'adm-zip'
-import type { BrowserWindow } from 'electron'
-import { createWriteStream, existsSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
-import https from 'node:https'
+import { app, type BrowserWindow } from 'electron'
+import { existsSync } from 'node:fs'
+import { readdir, readFile, rm, stat } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { parse } from 'csv-parse/sync'
 import { ipcChannels } from '@/shared/ipc.js'
 import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types.js'
 import { createPreparingSession, markSessionUsed, saveSession } from './session-service.js'
 
-const kaggleDatasetUrl = 'https://www.kaggle.com/api/v1/datasets/download/olistbr/brazilian-ecommerce'
+const kaggleDatasetHandle = 'olistbr/brazilian-ecommerce'
 
 function sendProgress(window: BrowserWindow, update: ProgressUpdate): void {
   window.webContents.send(ipcChannels.progress, update)
@@ -28,109 +27,144 @@ function sanitizeIdentifier(identifier: string): string {
     .replace(/[^a-zA-Z0-9_]/g, '_')
 }
 
-function downloadFile(
-  url: string,
-  destination: string,
-  authorization: string,
-  onProgress: (percent: number) => void,
-  redirects = 0
-): Promise<void> {
+function getPythonExecutable(): string {
+  const appPath = app.getAppPath()
+  const venvPython = process.platform === 'win32'
+    ? path.join(appPath, '.venv', 'Scripts', 'python.exe')
+    : path.join(appPath, '.venv', 'bin', 'python')
+
+  return existsSync(venvPython) ? venvPython : 'python3'
+}
+
+function runPythonKagglehub(outputDir: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { authorization } }, (response) => {
-      if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0) && response.headers.location) {
-        response.resume()
-        if (redirects > 5) reject(new Error('Too many redirects while downloading Kaggle dataset'))
-        else resolve(downloadFile(response.headers.location, destination, authorization, onProgress, redirects + 1))
+    const code = [
+      'import json',
+      'import sys',
+      'try:',
+      '    import kagglehub',
+      'except ModuleNotFoundError:',
+      '    print("Python package kagglehub is not installed.", file=sys.stderr)',
+      '    sys.exit(10)',
+      `path = kagglehub.dataset_download(${JSON.stringify(kaggleDatasetHandle)}, output_dir=${JSON.stringify(outputDir)})`,
+      'print(json.dumps({"path": path}))'
+    ].join('\n')
+
+    const child = spawn(getPythonExecutable(), ['-c', code], {
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: '1'
+      }
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `kagglehub exited with code ${code}`))
         return
       }
 
-      if (response.statusCode !== 200) {
-        response.resume()
-        reject(new Error(`Kaggle download failed with HTTP ${response.statusCode}`))
-        return
+      try {
+        const lines = stdout.trim().split('\n')
+        const payload = JSON.parse(lines[lines.length - 1]) as { path: string }
+        resolve(payload.path)
+      } catch {
+        reject(new Error(`Unable to read kagglehub output: ${stdout}`))
       }
-
-      const total = Number(response.headers['content-length'] ?? 0)
-      let downloaded = 0
-      const file = createWriteStream(destination)
-
-      response.on('data', (chunk: Buffer) => {
-        downloaded += chunk.length
-        if (total > 0) onProgress(Math.round((downloaded / total) * 100))
-      })
-      response.pipe(file)
-      file.on('finish', () => {
-        file.close(() => resolve())
-      })
-      file.on('error', reject)
     })
-
-    request.on('error', reject)
   })
 }
 
-async function downloadKaggleDataset(session: SessionSummary, window: BrowserWindow): Promise<string | undefined> {
-  const { KAGGLE_USERNAME, KAGGLE_KEY } = process.env
-  if (!KAGGLE_USERNAME || !KAGGLE_KEY) return undefined
-
-  const zipPath = path.join(session.folderPath, 'brazilian-ecommerce.zip')
-  const authorization = `Basic ${Buffer.from(`${KAGGLE_USERNAME}:${KAGGLE_KEY}`).toString('base64')}`
-
-  await downloadFile(kaggleDatasetUrl, zipPath, authorization, (percent) => {
-    sendProgress(window, {
-      sessionId: session.id,
-      label: 'Downloading Kaggle dataset',
-      percent: Math.min(55, 10 + Math.round(percent * 0.45))
+async function findCsvFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true })
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) return findCsvFiles(entryPath)
+      if (entry.isFile() && entry.name.endsWith('.csv')) return [entryPath]
+      return []
     })
-  })
+  )
 
-  return zipPath
+  return files.flat().sort()
 }
 
-function importKaggleZip(zipPath: string, databasePath: string, window: BrowserWindow, sessionId: string): void {
+async function downloadKaggleDataset(session: SessionSummary, window: BrowserWindow): Promise<string> {
+  const outputDir = path.join(session.folderPath, 'kaggle-data')
+  sendProgress(window, {
+    sessionId: session.id,
+    label: 'Downloading public Kaggle dataset with kagglehub',
+    percent: 25
+  })
+
+  return runPythonKagglehub(outputDir)
+}
+
+async function importKaggleDirectory(datasetPath: string, databasePath: string, window: BrowserWindow, sessionId: string): Promise<number> {
   const db = new Database(databasePath)
-  const zip = new AdmZip(zipPath)
-  const csvEntries = zip.getEntries().filter((entry) => !entry.isDirectory && entry.entryName.endsWith('.csv'))
+  const csvFiles = await findCsvFiles(datasetPath)
 
-  db.pragma('journal_mode = WAL')
+  try {
+    db.pragma('journal_mode = WAL')
 
-  csvEntries.forEach((entry, index) => {
-    const tableName = sanitizeIdentifier(path.basename(entry.entryName))
-    const records = parse(entry.getData().toString('utf8'), {
-      bom: true,
-      columns: true,
-      skip_empty_lines: true
-    }) as Record<string, string>[]
+    for (const [index, csvPath] of csvFiles.entries()) {
+      const tableName = sanitizeIdentifier(path.basename(csvPath))
+      const csv = await readFile(csvPath, 'utf8')
+      const records = parse(csv, {
+        bom: true,
+        columns: true,
+        skip_empty_lines: true
+      }) as Record<string, string>[]
 
-    if (records.length === 0) return
+      if (records.length === 0) continue
 
-    const columns = Object.keys(records[0])
-    db.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)}`)
-    db.exec(
-      `CREATE TABLE ${quoteIdentifier(tableName)} (${columns
-        .map((column) => `${quoteIdentifier(sanitizeIdentifier(column))} TEXT`)
-        .join(', ')})`
-    )
+      const columns = Object.keys(records[0])
+      db.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)}`)
+      db.exec(
+        `CREATE TABLE ${quoteIdentifier(tableName)} (${columns
+          .map((column) => `${quoteIdentifier(sanitizeIdentifier(column))} TEXT`)
+          .join(', ')})`
+      )
 
-    const placeholders = columns.map(() => '?').join(', ')
-    const insert = db.prepare(
-      `INSERT INTO ${quoteIdentifier(tableName)} (${columns
-        .map((column) => quoteIdentifier(sanitizeIdentifier(column)))
-        .join(', ')}) VALUES (${placeholders})`
-    )
-    const transaction = db.transaction((rows: Record<string, string>[]) => {
-      rows.forEach((row) => insert.run(columns.map((column) => row[column] ?? null)))
-    })
-    transaction(records)
+      const placeholders = columns.map(() => '?').join(', ')
+      const insert = db.prepare(
+        `INSERT INTO ${quoteIdentifier(tableName)} (${columns
+          .map((column) => quoteIdentifier(sanitizeIdentifier(column)))
+          .join(', ')}) VALUES (${placeholders})`
+      )
+      const transaction = db.transaction((rows: Record<string, string>[]) => {
+        rows.forEach((row) => insert.run(columns.map((column) => row[column] ?? null)))
+      })
+      transaction(records)
 
-    sendProgress(window, {
-      sessionId,
-      label: `Imported ${tableName}`,
-      percent: 55 + Math.round(((index + 1) / csvEntries.length) * 40)
-    })
-  })
+      sendProgress(window, {
+        sessionId,
+        label: `Imported ${tableName}`,
+        percent: 45 + Math.round(((index + 1) / csvFiles.length) * 50)
+      })
+    }
+  } finally {
+    db.close()
+  }
 
-  db.close()
+  return csvFiles.length
+}
+
+async function removeDatabaseFiles(databasePath: string): Promise<void> {
+  await Promise.all([
+    rm(databasePath, { force: true }),
+    rm(`${databasePath}-wal`, { force: true }),
+    rm(`${databasePath}-shm`, { force: true })
+  ])
 }
 
 function seedDatabase(databasePath: string): void {
@@ -165,13 +199,21 @@ export async function prepareDatabase(window: BrowserWindow): Promise<SessionSum
   const session = await createPreparingSession()
   sendProgress(window, { sessionId: session.id, label: 'Creating session folder', percent: 15 })
 
-  const zipPath = await downloadKaggleDataset(session, window)
-  if (zipPath) {
-    sendProgress(window, { sessionId: session.id, label: 'Importing CSV files into SQLite', percent: 55 })
-    importKaggleZip(zipPath, session.databasePath, window, session.id)
-    await rm(zipPath, { force: true })
-  } else {
-    sendProgress(window, { sessionId: session.id, label: 'Kaggle credentials missing; creating starter database', percent: 55 })
+  try {
+    const datasetPath = await downloadKaggleDataset(session, window)
+    sendProgress(window, { sessionId: session.id, label: 'Importing CSV files into SQLite', percent: 45 })
+    const importedFiles = await importKaggleDirectory(datasetPath, session.databasePath, window, session.id)
+    if (importedFiles === 0) {
+      throw new Error(`kagglehub downloaded no CSV files to ${datasetPath}`)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown kagglehub error'
+    sendProgress(window, {
+      sessionId: session.id,
+      label: `Using starter database: ${message}`,
+      percent: 55
+    })
+    await removeDatabaseFiles(session.databasePath)
     seedDatabase(session.databasePath)
   }
 
@@ -210,6 +252,10 @@ export async function listTables(session: SessionSummary): Promise<TableSummary[
   }))
   db.close()
   return result
+}
+
+export async function getDatabaseSize(session: SessionSummary): Promise<number> {
+  return (await stat(session.databasePath)).size
 }
 
 export async function previewTable(session: SessionSummary, tableName: string): Promise<TablePreview> {

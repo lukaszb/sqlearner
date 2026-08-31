@@ -13,14 +13,13 @@ npm run dev
 
 ## Kaggle Dataset
 
-Set Kaggle API credentials before running setup if you want the full Olist dataset import:
+SQLearner uses Python's `kagglehub` package to download the public Olist dataset without Kaggle API credentials:
 
 ```bash
-export KAGGLE_USERNAME="your-kaggle-username"
-export KAGGLE_KEY="your-kaggle-api-key"
+npm run setup:kagglehub
 ```
 
-Without credentials, SQLearner creates a small starter SQLite database so the app can still be explored locally.
+If Python or `kagglehub` is unavailable, SQLearner creates a small starter SQLite database so the app can still be explored locally.
 
 Run checks:
 
@@ -36,6 +35,7 @@ Build binaries:
 ```bash
 npm run build:mac
 npm run build:win
+npm run build:win:portable
 ```
 
-The Windows build runs from macOS through Electron Builder. Document any required signing, notarization, or Wine setup before release.
+`npm run build:win` creates a Windows x64 installer. `npm run build:win:portable` creates a portable Windows x64 `.exe`. The Windows build runs from macOS through Electron Builder. Document any required signing, notarization, or Wine setup before release.
