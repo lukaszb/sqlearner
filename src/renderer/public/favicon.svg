@@ -3,6 +3,9 @@
   <path fill="#f7f7f4" d="M176 308c0-65 99-118 221-118s221 53 221 118v354c0 65-99 118-221 118s-221-53-221-118V308Z"/>
   <ellipse cx="397" cy="308" rx="221" ry="118" fill="#dce9e5"/>
   <path fill="none" stroke="#256f63" stroke-width="34" d="M176 421c0 65 99 118 221 118s221-53 221-118M176 554c0 65 99 118 221 118s221-53 221-118"/>
-  <rect x="446" y="480" width="430" height="336" rx="78" fill="#17202a" stroke="#256f63" stroke-width="28"/>
-  <path fill="none" stroke="#f7f7f4" stroke-linecap="round" stroke-linejoin="round" stroke-width="50" d="m550 583 74 65-74 65M686 713h91"/>
+  <path fill="#17202a" d="m436 608 250-130 238 130-238 132-250-132Z"/>
+  <path fill="#17202a" d="M548 670v82c0 66 62 108 138 108s138-42 138-108v-82l-138 76-138-76Z"/>
+  <path fill="none" stroke="#dce9e5" stroke-linecap="round" stroke-width="28" d="m686 740 184-102v119"/>
+  <circle cx="870" cy="773" r="24" fill="#f7f7f4"/>
+  <path fill="#f7f7f4" d="M850 795h40l15 66h-70l15-66Z"/>
 </svg>

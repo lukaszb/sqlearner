@@ -31,6 +31,10 @@ export interface QueryResult {
   columns: string[]
   rows: Record<string, unknown>[]
   elapsedMs: number
+  /** Number of rows inserted, updated or deleted by a write statement. */
+  changes?: number
+  /** Human readable outcome for statements that return no rows. */
+  message?: string
 }
 
 export interface SqlQueryTab {
@@ -40,3 +44,5 @@ export interface SqlQueryTab {
   result?: QueryResult
   error?: string
 }
+
+export type { CourseModule, CourseProgress, Lesson, LessonBlock, ModuleLevel, ProgressEntry, QuizQuestion } from './course/types.js'

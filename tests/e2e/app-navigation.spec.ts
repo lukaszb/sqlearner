@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types'
+import type { CourseProgress, ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types'
 
 declare global {
   interface Window {
@@ -13,6 +13,10 @@ declare global {
       listTables: () => Promise<TableSummary[]>
       previewTable: (_sessionId: string, tableName: string) => Promise<TablePreview>
       runQuery: () => Promise<QueryResult>
+      runLessonQuery: () => Promise<QueryResult>
+      resetSandbox: () => Promise<void>
+      loadLessonProgress: () => Promise<CourseProgress>
+      saveLessonProgress: (_sessionId: string, progress: CourseProgress) => Promise<CourseProgress>
       onProgress: (_callback: (update: ProgressUpdate) => void) => () => void
     }
   }
@@ -61,6 +65,14 @@ test.beforeEach(async ({ page }) => {
         rows: [{ customer_id: 'c_001', city: 'sao paulo' }],
         elapsedMs: 4
       }),
+      runLessonQuery: async () => ({
+        columns: ['customer_id', 'city'],
+        rows: [{ customer_id: 'c_001', city: 'sao paulo' }],
+        elapsedMs: 4
+      }),
+      resetSandbox: async () => undefined,
+      loadLessonProgress: async () => ({ lessons: {}, exams: {} }),
+      saveLessonProgress: async (_sessionId: string, progress: CourseProgress) => progress,
       onProgress: () => () => undefined
     }
   })
@@ -158,4 +170,50 @@ test('confirms session deletion in a custom modal', async ({ page }) => {
   await page.getByTestId('confirm-delete-session').click()
   await expect(modal).toBeHidden()
   await expect.poll(() => page.evaluate(() => window.deleteSessionCalled)).toBe(true)
+})
+
+test('opens a lesson from the Lessons sidebar and runs its example', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('session-card').click()
+
+  await page.getByTestId('nav-lessons').click()
+  await expect(page.getByTestId('lessons-view')).toBeVisible()
+  await expect(page.getByTestId('lessons-tree')).toBeVisible()
+
+  const firstLesson = page.getByTestId('lesson-item').first()
+  await firstLesson.hover()
+  await expect(page.getByTestId('lesson-tooltip')).toContainText('Lesson 1')
+
+  await firstLesson.click()
+  await expect(page.getByTestId('lesson-title')).toContainText('Lesson 1')
+
+  await page.getByTestId('run-sql-block').first().click()
+  await expect(page.getByTestId('sql-block-result').first()).toContainText('sao paulo')
+})
+
+test('draws a random set of questions at the end of a lesson', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('session-card').click()
+  await page.getByTestId('nav-lessons').click()
+  await page.getByTestId('lesson-item').first().click()
+
+  await page.getByTestId('start-lesson-quiz').click()
+  await expect(page.getByTestId('quiz-panel')).toBeVisible()
+  await expect(page.getByTestId('quiz-counter')).toContainText('Question 1 of 3')
+  await expect(page.getByTestId('quiz-option')).toHaveCount(4)
+
+  await page.getByTestId('quiz-option').first().click()
+  await expect(page.getByTestId('quiz-feedback')).toBeVisible()
+  await expect(page.getByTestId('quiz-next')).toBeEnabled()
+})
+
+test('jumps straight to a module exam without finishing the lessons', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('session-card').click()
+  await page.getByTestId('nav-lessons').click()
+
+  await page.getByTestId('module-exam-item').first().click()
+  await expect(page.getByTestId('exam-detail')).toBeVisible()
+  await page.getByTestId('start-module-exam').click()
+  await expect(page.getByTestId('quiz-counter')).toContainText('of 14')
 })

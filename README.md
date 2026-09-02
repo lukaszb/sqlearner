@@ -11,6 +11,24 @@ npm run dev
 
 `npm run dev` expects Vite on port `5173`. Stop any older dev server using that port before restarting.
 
+## Lessons
+
+The sidebar has a `Lessons` item with the SQL course built on the session database. It expands into modules and each
+module into individual lessons; hovering a lesson shows its full title in a tooltip on the right.
+
+- Five modules: Foundations, Aggregation, Combining tables, Changing data and the Analyst toolkit, ordered from basics
+  to advanced.
+- Every lesson explains what each SQL clause does, and every example can be run against the session database from the
+  lesson screen.
+- Each lesson ends with three questions drawn at random from a larger bank. All of them have to be correct; a single
+  mistake draws a fresh set and the lesson stays unfinished.
+- Every module ends with an exam of at least ten questions with at least two from every lesson of that module.
+- Lessons can be taken in any order, and progress is stored per session in `lesson-progress.json` inside the session
+  folder.
+
+The `Changing data` module runs against `practice.sqlite`, a writable copy of the session database created on demand.
+The imported Olist database stays read-only and `Reset sandbox` restores the copy.
+
 ## Kaggle Dataset
 
 When a session is created, SQLearner downloads the complete public Olist dataset directly from Kaggle and imports all nine CSV files into SQLite. Python, `kagglehub`, and Kaggle API credentials are not required.

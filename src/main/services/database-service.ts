@@ -6,6 +6,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/p
 import path from 'node:path'
 import { parse } from 'csv-parse/sync'
 import { ipcChannels } from '@/shared/ipc.js'
+import { splitSqlStatements } from '@/shared/sql-statements.js'
 import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types.js'
 import { createPreparingSession, markSessionUsed, saveSession } from './session-service.js'
 
@@ -252,11 +253,105 @@ export async function previewTable(session: SessionSummary, tableName: string): 
   return { columns, rows }
 }
 
-export async function runQuery(session: SessionSummary, sql: string): Promise<QueryResult> {
+export function executeSql(db: Database.Database, sql: string): QueryResult {
   const started = performance.now()
+  const statements = splitSqlStatements(sql)
+  if (statements.length === 0) throw new Error('Write a SQL statement before running it')
+
+  let result: QueryResult | undefined
+  let changes = 0
+
+  for (const single of statements) {
+    const statement = db.prepare(single)
+    if (statement.reader) {
+      const rows = statement.all() as Record<string, unknown>[]
+      const columns = rows[0] ? Object.keys(rows[0]) : statement.columns().map((column) => column.name)
+      result = { columns, rows, elapsedMs: 0 }
+      continue
+    }
+
+    const info = statement.run()
+    changes += info.changes
+    result = { columns: [], rows: [], elapsedMs: 0, changes: info.changes }
+  }
+
+  const elapsedMs = Math.round(performance.now() - started)
+  const last = result ?? { columns: [], rows: [], elapsedMs }
+  const parts: string[] = []
+  if (statements.length > 1) parts.push(`${statements.length} statements executed`)
+  if (changes > 0) parts.push(changes === 1 ? '1 row affected' : `${changes} rows affected`)
+  else if (last.columns.length === 0 && statements.length === 1) parts.push('0 rows affected')
+
+  return {
+    ...last,
+    elapsedMs,
+    changes: changes > 0 ? changes : last.changes,
+    message: parts.length > 0 ? parts.join(', ') : undefined
+  }
+}
+
+export async function runQuery(session: SessionSummary, sql: string): Promise<QueryResult> {
   const db = openSessionDatabase(await markSessionUsed(session))
-  const rows = db.prepare(sql).all() as Record<string, unknown>[]
-  const columns = rows[0] ? Object.keys(rows[0]) : []
-  db.close()
-  return { columns, rows, elapsedMs: Math.round(performance.now() - started) }
+  try {
+    return executeSql(db, sql)
+  } finally {
+    db.close()
+  }
+}
+
+export function getSandboxPath(session: SessionSummary): string {
+  return path.join(session.folderPath, 'practice.sqlite')
+}
+
+async function createSandbox(session: SessionSummary): Promise<string> {
+  const sandboxPath = getSandboxPath(session)
+  if (!existsSync(session.databasePath)) {
+    throw new Error(`Database file is missing: ${session.databasePath}`)
+  }
+
+  const source = new Database(session.databasePath, { readonly: true })
+  try {
+    await source.backup(sandboxPath)
+  } finally {
+    source.close()
+  }
+
+  return sandboxPath
+}
+
+/** The writable copy used by the lessons that change data. */
+export async function ensureSandbox(session: SessionSummary): Promise<string> {
+  const sandboxPath = getSandboxPath(session)
+  if (existsSync(sandboxPath)) return sandboxPath
+  return createSandbox(session)
+}
+
+export async function resetSandbox(session: SessionSummary): Promise<string> {
+  const sandboxPath = getSandboxPath(session)
+  await Promise.all([
+    rm(sandboxPath, { force: true }),
+    rm(`${sandboxPath}-wal`, { force: true }),
+    rm(`${sandboxPath}-shm`, { force: true })
+  ])
+  return createSandbox(session)
+}
+
+/**
+ * Runs a lesson statement. Read-only lessons use the session database, lessons
+ * that change data use the practice sandbox so the imported dataset stays intact.
+ */
+export async function runLessonQuery(
+  session: SessionSummary,
+  sql: string,
+  useSandbox: boolean
+): Promise<QueryResult> {
+  const usedSession = await markSessionUsed(session)
+  if (!useSandbox) return runQuery(usedSession, sql)
+
+  const db = new Database(await ensureSandbox(usedSession))
+  try {
+    return executeSql(db, sql)
+  } finally {
+    db.close()
+  }
 }

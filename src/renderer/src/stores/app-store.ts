@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia'
 import type { ProgressUpdate, QueryResult, SessionSummary, SqlQueryTab, TablePreview, TableSummary } from '@/shared/types'
 
+export type AppView = 'database' | 'queries' | 'lessons'
+
 interface AppState {
   sessions: SessionSummary[]
   activeSessionId?: string
-  activeView: 'database' | 'queries'
+  activeView: AppView
   tables: TableSummary[]
   selectedTable?: string
   tablePreview?: TablePreview
@@ -122,7 +124,7 @@ export const useAppStore = defineStore('app', {
         return false
       }
     },
-    async selectView(view: 'database' | 'queries') {
+    async selectView(view: AppView) {
       this.activeView = view
       if (view === 'queries' && this.queryTabs.length === 0) {
         this.addQueryTab()

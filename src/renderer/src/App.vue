@@ -3,10 +3,14 @@ import { nextTick, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import DatabaseView from '@/renderer/src/components/DatabaseView.vue'
 import QueryView from '@/renderer/src/components/QueryView.vue'
+import LessonsSidebar from '@/renderer/src/components/LessonsSidebar.vue'
+import LessonsView from '@/renderer/src/components/LessonsView.vue'
 import SessionList from '@/renderer/src/components/SessionList.vue'
 import { useAppStore } from '@/renderer/src/stores/app-store'
+import { useLessonsStore } from '@/renderer/src/stores/lessons-store'
 
 const store = useAppStore()
+const lessonsStore = useLessonsStore()
 const { activeSession, activeView, electronReady, error, loading, progress, sessions } = storeToRefs(store)
 const sessionName = ref('')
 const sessionNameInput = ref<HTMLInputElement>()
@@ -16,6 +20,16 @@ const renaming = ref(false)
 watch(activeSession, (session) => {
   sessionName.value = session?.name ?? ''
   editingSessionName.value = false
+
+  if (!session) {
+    lessonsStore.resetForSession()
+    return
+  }
+
+  if (lessonsStore.progressLoadedFor !== session.id) {
+    lessonsStore.resetForSession()
+    void lessonsStore.loadProgress(session.id)
+  }
 }, { immediate: true })
 
 onMounted(() => {
@@ -188,7 +202,7 @@ function cancelEditingSessionName(): void {
           </form>
         </div>
 
-        <nav class="flex-1 p-3">
+        <nav class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="workspace-nav">
           <button
             class="w-full rounded-md px-3 py-2 text-left text-sm font-medium"
             data-testid="nav-database"
@@ -205,6 +219,7 @@ function cancelEditingSessionName(): void {
           >
             Queries
           </button>
+          <LessonsSidebar />
         </nav>
 
         <div class="border-t border-stone-200 px-5 py-4">
@@ -232,6 +247,7 @@ function cancelEditingSessionName(): void {
 
         <DatabaseView v-show="activeView === 'database'" />
         <QueryView v-show="activeView === 'queries'" />
+        <LessonsView v-show="activeView === 'lessons'" />
       </section>
     </template>
   </main>

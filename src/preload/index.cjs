@@ -9,6 +9,10 @@ const ipcChannels = {
   databaseTables: 'database:tables',
   databasePreview: 'database:preview',
   queryRun: 'query:run',
+  lessonsRun: 'lessons:run',
+  lessonsSandboxReset: 'lessons:sandbox-reset',
+  lessonsProgressGet: 'lessons:progress-get',
+  lessonsProgressSet: 'lessons:progress-set',
   progress: 'progress:update'
 }
 
@@ -21,6 +25,10 @@ const api = {
   listTables: (sessionId) => ipcRenderer.invoke(ipcChannels.databaseTables, sessionId),
   previewTable: (sessionId, tableName) => ipcRenderer.invoke(ipcChannels.databasePreview, sessionId, tableName),
   runQuery: (sessionId, sql) => ipcRenderer.invoke(ipcChannels.queryRun, sessionId, sql),
+  runLessonQuery: (sessionId, sql, useSandbox) => ipcRenderer.invoke(ipcChannels.lessonsRun, sessionId, sql, useSandbox),
+  resetSandbox: (sessionId) => ipcRenderer.invoke(ipcChannels.lessonsSandboxReset, sessionId),
+  loadLessonProgress: (sessionId) => ipcRenderer.invoke(ipcChannels.lessonsProgressGet, sessionId),
+  saveLessonProgress: (sessionId, progress) => ipcRenderer.invoke(ipcChannels.lessonsProgressSet, sessionId, progress),
   onProgress: (callback) => {
     const listener = (_event, update) => callback(update)
     ipcRenderer.on(ipcChannels.progress, listener)
