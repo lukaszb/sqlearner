@@ -71,9 +71,11 @@
       "output": "release"
     },
     "mac": {
+      "icon": "assets/icon.icns",
       "target": "dmg"
     },
     "win": {
+      "icon": "assets/icon.ico",
       "target": "nsis"
     }
   },
