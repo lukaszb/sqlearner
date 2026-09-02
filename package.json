@@ -10,7 +10,6 @@
     "dev:electron": "wait-on tcp:5173 && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
     "postinstall": "electron-builder install-app-deps",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
-    "setup:kagglehub": "python3 -m venv .venv && .venv/bin/python -m pip install kagglehub",
     "start": "electron .",
     "build": "npm run typecheck && npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",

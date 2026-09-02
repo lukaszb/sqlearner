@@ -13,13 +13,9 @@ npm run dev
 
 ## Kaggle Dataset
 
-SQLearner uses Python's `kagglehub` package to download the public Olist dataset without Kaggle API credentials:
+When a session is created, SQLearner downloads the complete public Olist dataset directly from Kaggle and imports all nine CSV files into SQLite. Python, `kagglehub`, and Kaggle API credentials are not required.
 
-```bash
-npm run setup:kagglehub
-```
-
-If Python or `kagglehub` is unavailable, SQLearner creates a small starter SQLite database so the app can still be explored locally.
+An incomplete download or import fails session creation instead of silently substituting a sample database.
 
 Run checks:
 

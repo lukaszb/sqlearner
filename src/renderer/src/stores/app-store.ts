@@ -92,6 +92,7 @@ export const useAppStore = defineStore('app', {
           if (this.progress?.sessionId === session.id) this.progress = undefined
         }, 1500)
       } catch (error) {
+        this.progress = undefined
         this.error = error instanceof Error ? error.message : 'Database setup failed'
       } finally {
         this.loading = false

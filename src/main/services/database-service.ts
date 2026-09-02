@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3'
-import { app, type BrowserWindow } from 'electron'
+import AdmZip from 'adm-zip'
+import type { BrowserWindow } from 'electron'
 import { existsSync } from 'node:fs'
-import { readdir, readFile, rm, stat } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parse } from 'csv-parse/sync'
 import { ipcChannels } from '@/shared/ipc.js'
@@ -10,6 +10,18 @@ import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSu
 import { createPreparingSession, markSessionUsed, saveSession } from './session-service.js'
 
 const kaggleDatasetHandle = 'olistbr/brazilian-ecommerce'
+const kaggleDatasetUrl = `https://www.kaggle.com/api/v1/datasets/download/${kaggleDatasetHandle}`
+const expectedCsvFiles = new Set([
+  'olist_customers_dataset.csv',
+  'olist_geolocation_dataset.csv',
+  'olist_order_items_dataset.csv',
+  'olist_order_payments_dataset.csv',
+  'olist_order_reviews_dataset.csv',
+  'olist_orders_dataset.csv',
+  'olist_products_dataset.csv',
+  'olist_sellers_dataset.csv',
+  'product_category_name_translation.csv'
+])
 
 function sendProgress(window: BrowserWindow, update: ProgressUpdate): void {
   window.webContents.send(ipcChannels.progress, update)
@@ -27,63 +39,6 @@ function sanitizeIdentifier(identifier: string): string {
     .replace(/[^a-zA-Z0-9_]/g, '_')
 }
 
-function getPythonExecutable(): string {
-  const appPath = app.getAppPath()
-  const venvPython = process.platform === 'win32'
-    ? path.join(appPath, '.venv', 'Scripts', 'python.exe')
-    : path.join(appPath, '.venv', 'bin', 'python')
-
-  return existsSync(venvPython) ? venvPython : 'python3'
-}
-
-function runPythonKagglehub(outputDir: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const code = [
-      'import json',
-      'import sys',
-      'try:',
-      '    import kagglehub',
-      'except ModuleNotFoundError:',
-      '    print("Python package kagglehub is not installed.", file=sys.stderr)',
-      '    sys.exit(10)',
-      `path = kagglehub.dataset_download(${JSON.stringify(kaggleDatasetHandle)}, output_dir=${JSON.stringify(outputDir)})`,
-      'print(json.dumps({"path": path}))'
-    ].join('\n')
-
-    const child = spawn(getPythonExecutable(), ['-c', code], {
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: '1'
-      }
-    })
-
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr.trim() || `kagglehub exited with code ${code}`))
-        return
-      }
-
-      try {
-        const lines = stdout.trim().split('\n')
-        const payload = JSON.parse(lines[lines.length - 1]) as { path: string }
-        resolve(payload.path)
-      } catch {
-        reject(new Error(`Unable to read kagglehub output: ${stdout}`))
-      }
-    })
-  })
-}
-
 async function findCsvFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = await Promise.all(
@@ -98,20 +53,46 @@ async function findCsvFiles(directory: string): Promise<string[]> {
   return files.flat().sort()
 }
 
+export function assertCompleteKaggleDataset(csvFiles: string[]): void {
+  const downloadedFiles = new Set(csvFiles.map((file) => path.basename(file)))
+  const missingFiles = [...expectedCsvFiles].filter((file) => !downloadedFiles.has(file))
+
+  if (missingFiles.length > 0) {
+    throw new Error(`Kaggle dataset is incomplete. Missing: ${missingFiles.join(', ')}`)
+  }
+}
+
 async function downloadKaggleDataset(session: SessionSummary, window: BrowserWindow): Promise<string> {
   const outputDir = path.join(session.folderPath, 'kaggle-data')
+  const archivePath = path.join(session.folderPath, 'brazilian-ecommerce.zip')
   sendProgress(window, {
     sessionId: session.id,
-    label: 'Downloading public Kaggle dataset with kagglehub',
+    label: 'Downloading the complete Olist dataset from Kaggle',
     percent: 25
   })
 
-  return runPythonKagglehub(outputDir)
+  const response = await fetch(kaggleDatasetUrl, { redirect: 'follow' })
+  if (!response.ok) {
+    throw new Error(`Kaggle download failed with HTTP ${response.status}`)
+  }
+
+  await writeFile(archivePath, Buffer.from(await response.arrayBuffer()))
+  sendProgress(window, {
+    sessionId: session.id,
+    label: 'Extracting Kaggle dataset',
+    percent: 35
+  })
+
+  await mkdir(outputDir, { recursive: true })
+  new AdmZip(archivePath).extractAllTo(outputDir, true)
+  await rm(archivePath, { force: true })
+  return outputDir
 }
 
 async function importKaggleDirectory(datasetPath: string, databasePath: string, window: BrowserWindow, sessionId: string): Promise<number> {
-  const db = new Database(databasePath)
   const csvFiles = await findCsvFiles(datasetPath)
+  assertCompleteKaggleDataset(csvFiles)
+  const db = new Database(databasePath)
 
   try {
     db.pragma('journal_mode = WAL')
@@ -159,42 +140,6 @@ async function importKaggleDirectory(datasetPath: string, databasePath: string, 
   return csvFiles.length
 }
 
-async function removeDatabaseFiles(databasePath: string): Promise<void> {
-  await Promise.all([
-    rm(databasePath, { force: true }),
-    rm(`${databasePath}-wal`, { force: true }),
-    rm(`${databasePath}-shm`, { force: true })
-  ])
-}
-
-function seedDatabase(databasePath: string): void {
-  const db = new Database(databasePath)
-  db.pragma('journal_mode = WAL')
-  db.exec(`
-    CREATE TABLE customers (
-      customer_id TEXT PRIMARY KEY,
-      city TEXT NOT NULL,
-      state TEXT NOT NULL
-    );
-    CREATE TABLE orders (
-      order_id TEXT PRIMARY KEY,
-      customer_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      total REAL NOT NULL,
-      FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
-    );
-    INSERT INTO customers VALUES
-      ('c_001', 'sao paulo', 'SP'),
-      ('c_002', 'rio de janeiro', 'RJ'),
-      ('c_003', 'curitiba', 'PR');
-    INSERT INTO orders VALUES
-      ('o_1001', 'c_001', 'delivered', 129.9),
-      ('o_1002', 'c_002', 'shipped', 84.5),
-      ('o_1003', 'c_003', 'delivered', 212.0);
-  `)
-  db.close()
-}
-
 export async function prepareDatabase(window: BrowserWindow): Promise<SessionSummary> {
   const session = await createPreparingSession()
   sendProgress(window, { sessionId: session.id, label: 'Creating session folder', percent: 15 })
@@ -202,19 +147,11 @@ export async function prepareDatabase(window: BrowserWindow): Promise<SessionSum
   try {
     const datasetPath = await downloadKaggleDataset(session, window)
     sendProgress(window, { sessionId: session.id, label: 'Importing CSV files into SQLite', percent: 45 })
-    const importedFiles = await importKaggleDirectory(datasetPath, session.databasePath, window, session.id)
-    if (importedFiles === 0) {
-      throw new Error(`kagglehub downloaded no CSV files to ${datasetPath}`)
-    }
+    await importKaggleDirectory(datasetPath, session.databasePath, window, session.id)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown kagglehub error'
-    sendProgress(window, {
-      sessionId: session.id,
-      label: `Using starter database: ${message}`,
-      percent: 55
-    })
-    await removeDatabaseFiles(session.databasePath)
-    seedDatabase(session.databasePath)
+    await rm(session.folderPath, { recursive: true, force: true })
+    const message = error instanceof Error ? error.message : 'Unknown Kaggle download error'
+    throw new Error(`Could not create the complete Kaggle database: ${message}`)
   }
 
   sendProgress(window, { sessionId: session.id, label: 'Finishing session', percent: 95 })
