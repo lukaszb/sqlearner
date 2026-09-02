@@ -9,10 +9,13 @@ import { useAppStore } from '@/renderer/src/stores/app-store'
 const store = useAppStore()
 const { activeSession, activeView, electronReady, error, loading, progress, sessions } = storeToRefs(store)
 const sessionName = ref('')
+const sessionNameInput = ref<HTMLInputElement>()
+const editingSessionName = ref(false)
 const renaming = ref(false)
 
 watch(activeSession, (session) => {
   sessionName.value = session?.name ?? ''
+  editingSessionName.value = false
 }, { immediate: true })
 
 onMounted(() => {
@@ -23,23 +26,39 @@ async function saveSessionName(): Promise<void> {
   if (!activeSession.value || renaming.value) return
 
   const nextName = sessionName.value.trim()
-  if (!nextName || nextName === activeSession.value.name) {
+  if (!nextName) return
+  if (nextName === activeSession.value.name) {
     sessionName.value = activeSession.value.name
+    editingSessionName.value = false
     return
   }
 
   renaming.value = true
   try {
     const renamed = await store.renameActiveSession(nextName)
-    if (!renamed) sessionName.value = activeSession.value.name
+    if (renamed) {
+      editingSessionName.value = false
+    } else {
+      sessionName.value = activeSession.value.name
+    }
   } finally {
     renaming.value = false
   }
 }
 
-function submitSessionName(event: Event): void {
-  const form = event.currentTarget as HTMLFormElement
-  void saveSessionName().then(() => nextTick(() => form.querySelector('input')?.blur()))
+function startEditingSessionName(): void {
+  if (!activeSession.value) return
+  sessionName.value = activeSession.value.name
+  editingSessionName.value = true
+  void nextTick(() => {
+    sessionNameInput.value?.focus()
+    sessionNameInput.value?.select()
+  })
+}
+
+function cancelEditingSessionName(): void {
+  sessionName.value = activeSession.value?.name ?? ''
+  editingSessionName.value = false
 }
 </script>
 
@@ -124,26 +143,47 @@ function submitSessionName(event: Event): void {
             <span aria-hidden="true">←</span>
             All sessions
           </button>
-          <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-stone-500" for="session-name">
+          <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">
             Session
-          </label>
-          <form class="flex gap-2" @submit.prevent="submitSessionName">
+          </div>
+          <div v-if="!editingSessionName" class="flex items-center gap-2">
+            <div class="min-w-0 flex-1 truncate font-semibold" data-testid="session-name-readonly" :title="activeSession.name">
+              {{ activeSession.name }}
+            </div>
+            <button
+              class="rounded-md border border-stone-300 px-2 py-1.5 text-xs font-semibold text-brand hover:bg-emerald-50"
+              data-testid="edit-session-name"
+              type="button"
+              @click="startEditingSessionName"
+            >
+              Edit
+            </button>
+          </div>
+          <form v-else class="flex gap-2" @submit.prevent="saveSessionName">
             <input
-              id="session-name"
+              ref="sessionNameInput"
               v-model="sessionName"
               class="min-w-0 flex-1 rounded-md border border-stone-300 px-2 py-1.5 font-semibold outline-none focus:border-brand focus:ring-1 focus:ring-brand"
-              data-testid="session-name"
+              data-testid="session-name-input"
               maxlength="100"
               :disabled="renaming"
-              @blur="saveSessionName"
-              @keydown.esc="sessionName = activeSession?.name ?? ''"
+              @keydown.esc="cancelEditingSessionName"
             >
             <button
               class="rounded-md border border-stone-300 px-2 text-xs font-semibold text-brand hover:bg-emerald-50 disabled:opacity-50"
+              data-testid="save-session-name"
               type="submit"
-              :disabled="renaming || !sessionName.trim() || sessionName.trim() === activeSession.name"
+              :disabled="renaming || !sessionName.trim()"
             >
               {{ renaming ? '...' : 'Save' }}
+            </button>
+            <button
+              class="rounded-md px-2 text-xs font-medium text-stone-600 hover:bg-stone-100"
+              type="button"
+              :disabled="renaming"
+              @click="cancelEditingSessionName"
+            >
+              Cancel
             </button>
           </form>
         </div>

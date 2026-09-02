@@ -100,9 +100,13 @@ test('renames a session and returns to the session list', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('session-card').click()
 
-  await page.getByTestId('session-name').fill('My SQL practice')
-  await page.getByTestId('session-name').press('Enter')
-  await expect(page.getByTestId('session-name')).toHaveValue('My SQL practice')
+  await expect(page.getByTestId('session-name-readonly')).toHaveText('SQLearner E2E')
+  await expect(page.getByTestId('session-name-input')).toBeHidden()
+  await page.getByTestId('edit-session-name').click()
+  await page.getByTestId('session-name-input').fill('My SQL practice')
+  await page.getByTestId('save-session-name').click()
+  await expect(page.getByTestId('session-name-input')).toBeHidden()
+  await expect(page.getByTestId('session-name-readonly')).toHaveText('My SQL practice')
 
   await page.getByTestId('back-to-sessions').click()
   await expect(page.getByTestId('sessions-home')).toBeVisible()
