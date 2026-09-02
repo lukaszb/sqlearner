@@ -112,23 +112,22 @@ test('runs a query from the Queries tab', async ({ page }) => {
   await expect(page.getByTestId('query-result')).toContainText('sao paulo')
 })
 
-test('runs a query with Ctrl+Enter from the editor', async ({ page }) => {
+test('shows and uses the run shortcut for the current platform', async ({ page }) => {
   await page.goto('/')
 
   await page.getByTestId('session-card').click()
   await page.getByTestId('nav-queries').click()
-  await page.getByTestId('query-editor').press('Control+Enter')
 
-  await expect(page.getByTestId('query-result')).toBeVisible()
-  await expect(page.getByTestId('query-result')).toContainText('sao paulo')
-})
+  const platform = await page.evaluate(() => navigator.platform.toLowerCase())
+  const usesMeta = platform.includes('mac') || platform.includes('win')
+  const accessibleShortcut = platform.includes('mac')
+    ? 'Command + Enter'
+    : platform.includes('win') ? 'Windows + Enter' : 'Control + Enter'
 
-test('runs a query with Meta+Enter from the editor', async ({ page }) => {
-  await page.goto('/')
-
-  await page.getByTestId('session-card').click()
-  await page.getByTestId('nav-queries').click()
-  await page.getByTestId('query-editor').press('Meta+Enter')
+  const shortcut = page.getByTestId('run-query').getByTestId('run-shortcut')
+  await expect(shortcut).toHaveAttribute('aria-label', accessibleShortcut)
+  await expect(shortcut.locator('kbd')).toHaveCount(2)
+  await page.getByTestId('query-editor').press(usesMeta ? 'Meta+Enter' : 'Control+Enter')
 
   await expect(page.getByTestId('query-result')).toBeVisible()
   await expect(page.getByTestId('query-result')).toContainText('sao paulo')
@@ -172,6 +171,57 @@ test('confirms session deletion in a custom modal', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.deleteSessionCalled)).toBe(true)
 })
 
+test('includes a runnable query in every four-question lesson quiz', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('session-card').click()
+  await page.getByTestId('nav-lessons').click()
+  await page.getByTestId('lesson-item').first().click()
+  await page.getByTestId('start-lesson-quiz').click()
+
+  await expect(page.getByTestId('quiz-counter')).toContainText('of 4')
+  let ranQuery = false
+  let revealedHint = false
+
+  const platform = await page.evaluate(() => navigator.platform.toLowerCase())
+  const usesMeta = platform.includes('mac') || platform.includes('win')
+  const accessibleShortcut = platform.includes('mac')
+    ? 'Command + Enter'
+    : platform.includes('win') ? 'Windows + Enter' : 'Control + Enter'
+
+  for (let index = 0; index < 4; index += 1) {
+    const editor = page.getByTestId('quiz-query-editor')
+    if (await editor.isVisible()) {
+      const shortcut = page.getByTestId('quiz-run-query').getByTestId('run-shortcut')
+      await expect(shortcut).toHaveAttribute('aria-label', accessibleShortcut)
+      await expect(shortcut.locator('kbd')).toHaveCount(2)
+
+      const hintToggle = page.getByTestId('quiz-hint-toggle')
+      if (await hintToggle.isVisible()) {
+        await expect(hintToggle).toHaveAttribute('aria-expanded', 'false')
+        await expect(page.getByTestId('quiz-hint')).toBeHidden()
+        await hintToggle.click()
+        await expect(hintToggle).toHaveAttribute('aria-expanded', 'true')
+        await expect(page.getByTestId('quiz-hint')).toBeVisible()
+        revealedHint = true
+      }
+
+      if (!(await editor.inputValue()).trim()) await editor.fill('SELECT 1;')
+      await editor.press(usesMeta ? 'Meta+Enter' : 'Control+Enter')
+      await expect(page.getByTestId('quiz-query-result')).toBeVisible()
+      await expect(page.getByTestId('quiz-next')).toBeEnabled()
+      ranQuery = true
+      if (revealedHint) break
+    } else {
+      await page.getByTestId('quiz-option').first().click()
+    }
+
+    await page.getByTestId('quiz-next').click()
+  }
+
+  expect(ranQuery).toBe(true)
+  expect(revealedHint).toBe(true)
+})
+
 test('opens a lesson from the Lessons sidebar and runs its example', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('session-card').click()
@@ -199,10 +249,17 @@ test('draws a random set of questions at the end of a lesson', async ({ page }) 
 
   await page.getByTestId('start-lesson-quiz').click()
   await expect(page.getByTestId('quiz-panel')).toBeVisible()
-  await expect(page.getByTestId('quiz-counter')).toContainText('Question 1 of 3')
-  await expect(page.getByTestId('quiz-option')).toHaveCount(4)
+  await expect(page.getByTestId('quiz-counter')).toContainText('Question 1 of 4')
 
-  await page.getByTestId('quiz-option').first().click()
+  const queryEditor = page.getByTestId('quiz-query-editor')
+  if (await queryEditor.isVisible()) {
+    if (!(await queryEditor.inputValue()).trim()) await queryEditor.fill('SELECT 1;')
+    await page.getByTestId('quiz-run-query').click()
+  } else {
+    await expect(page.getByTestId('quiz-option')).toHaveCount(4)
+    await page.getByTestId('quiz-option').first().click()
+  }
+
   await expect(page.getByTestId('quiz-feedback')).toBeVisible()
   await expect(page.getByTestId('quiz-next')).toBeEnabled()
 })

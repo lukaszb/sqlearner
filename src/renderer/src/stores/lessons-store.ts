@@ -20,6 +20,10 @@ export interface QuizItem {
   question: QuizQuestion
   options: string[]
   selected?: string
+  queryDraft: string
+  queryRunning?: boolean
+  queryResult?: QueryResult
+  queryError?: string
 }
 
 export interface QuizState {
@@ -30,6 +34,7 @@ export interface QuizState {
   index: number
   finished: boolean
   passed: boolean
+  useSandbox: boolean
 }
 
 export interface RunState {
@@ -136,10 +141,14 @@ export const useLessonsStore = defineStore('lessons', {
         mode: 'lesson',
         targetId: lessonId,
         title: located.lesson.title,
-        items: drawLessonQuestions(located.lesson).map((question) => presentQuestion(question)),
+        items: drawLessonQuestions(located.lesson).map((question) => ({
+          ...presentQuestion(question),
+          queryDraft: question.starterSql ?? ''
+        })),
         index: 0,
         finished: false,
-        passed: false
+        passed: false,
+        useSandbox: Boolean(located.module.usesSandbox)
       }
     },
     startExam(moduleId: string) {
@@ -149,10 +158,14 @@ export const useLessonsStore = defineStore('lessons', {
         mode: 'exam',
         targetId: moduleId,
         title: `${module.title} - module exam`,
-        items: drawExamQuestions(module, moduleExamSize(module)).map((question) => presentQuestion(question)),
+        items: drawExamQuestions(module, moduleExamSize(module)).map((question) => ({
+          ...presentQuestion(question),
+          queryDraft: ''
+        })),
         index: 0,
         finished: false,
-        passed: false
+        passed: false,
+        useSandbox: Boolean(module.usesSandbox)
       }
     },
     retryQuiz() {
@@ -169,6 +182,35 @@ export const useLessonsStore = defineStore('lessons', {
       const item = quiz?.items[quiz.index]
       if (!quiz || !item || item.selected !== undefined) return
       item.selected = option
+    },
+    async runCurrentQuizQuery() {
+      const quiz = this.quiz
+      const item = quiz?.items[quiz.index]
+      const app = useAppStore()
+      if (
+        !quiz ||
+        !item ||
+        item.question.kind !== 'query' ||
+        item.selected !== undefined ||
+        item.queryRunning ||
+        !item.queryDraft.trim() ||
+        !app.activeSessionId ||
+        !window.sqlearner
+      ) return
+
+      item.queryRunning = true
+      item.queryError = undefined
+      item.queryResult = undefined
+      try {
+        item.queryResult = window.sqlearner.runLessonQuery
+          ? await window.sqlearner.runLessonQuery(app.activeSessionId, item.queryDraft, quiz.useSandbox)
+          : await window.sqlearner.runQuery(app.activeSessionId, item.queryDraft)
+        item.selected = item.question.answer
+      } catch (error) {
+        item.queryError = error instanceof Error ? error.message : 'Query failed'
+      } finally {
+        item.queryRunning = false
+      }
     },
     nextQuestion() {
       const quiz = this.quiz

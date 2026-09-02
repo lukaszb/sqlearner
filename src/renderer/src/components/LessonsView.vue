@@ -194,8 +194,8 @@ function startExam(): void {
               <div v-else class="rounded-lg border border-stone-300 bg-white p-5" data-testid="lesson-quiz-intro">
                 <h4 class="font-semibold">Check yourself</h4>
                 <p class="mt-1 text-sm text-stone-700">
-                  Three questions drawn at random from this lesson. Every answer has to be correct - one mistake and a
-                  new set is drawn so you can try again.
+                  Four questions drawn from this lesson, including one or two SQL queries to run. Every answer has to
+                  be correct - one mistake and a new set is drawn so you can try again.
                 </p>
                 <div class="mt-4 flex flex-wrap items-center gap-3">
                   <button

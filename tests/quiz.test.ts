@@ -5,6 +5,8 @@ import {
   drawLessonQuestions,
   examQuestionsPerLesson,
   isCorrectAnswer,
+  lessonQueryQuestionMaximum,
+  lessonQueryQuestionMinimum,
   lessonQuizSize,
   moduleExamSize,
   presentQuestion,
@@ -40,10 +42,23 @@ describe('lesson quiz draw', () => {
       expect(drawn).toHaveLength(lessonQuizSize)
       expect(new Set(drawn.map((question) => question.id)).size).toBe(lessonQuizSize)
       for (const question of drawn) {
-        expect(firstLesson.questions).toContain(question)
+        if (question.kind !== 'query') expect(firstLesson.questions).toContain(question)
       }
     }
   })
+
+  it.each(course.flatMap((module) => module.lessons))(
+    '$id always draws one or two runnable query questions',
+    (lesson) => {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const drawn = drawLessonQuestions(lesson)
+        const queryCount = drawn.filter((question) => question.kind === 'query').length
+        expect(queryCount).toBeGreaterThanOrEqual(lessonQueryQuestionMinimum)
+        expect(queryCount).toBeLessThanOrEqual(lessonQueryQuestionMaximum)
+        expect(drawn).toHaveLength(4)
+      }
+    }
+  )
 
   it('does not always draw the same questions', () => {
     if (!firstLesson) throw new Error('missing lesson')
@@ -57,6 +72,15 @@ describe('lesson quiz draw', () => {
       )
     }
     expect(draws.size).toBeGreaterThan(1)
+  })
+
+  it('can draw either one or two runnable questions', () => {
+    if (!firstLesson) throw new Error('missing lesson')
+    const oneQuery = drawLessonQuestions(firstLesson, lessonQuizSize, () => 0)
+    const twoQueries = drawLessonQuestions(firstLesson, lessonQuizSize, () => 0.99)
+
+    expect(oneQuery.filter((question) => question.kind === 'query')).toHaveLength(1)
+    expect(twoQueries.filter((question) => question.kind === 'query')).toHaveLength(2)
   })
 })
 

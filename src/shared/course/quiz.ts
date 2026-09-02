@@ -1,7 +1,10 @@
 import type { CourseModule, Lesson, QuizQuestion } from './types.js'
 
 /** Number of questions drawn at the end of a single lesson. */
-export const lessonQuizSize = 3
+export const lessonQuizSize = 4
+/** Every lesson quiz includes one or two questions that execute SQL. */
+export const lessonQueryQuestionMinimum = 1
+export const lessonQueryQuestionMaximum = 2
 /** Minimum number of questions every lesson contributes to a module exam. */
 export const examQuestionsPerLesson = 2
 /** Baseline module exam length; grows when a module has many lessons. */
@@ -37,7 +40,42 @@ export function drawLessonQuestions(
   count: number = lessonQuizSize,
   random: RandomFn = Math.random
 ): QuizQuestion[] {
-  return pickRandom(lesson.questions, count, random)
+  const sqlBlocks = lesson.blocks.filter((block) => block.kind === 'sql')
+  const queryCount = count > 1 && sqlBlocks.length > 0 && random() >= 0.5
+    ? lessonQueryQuestionMaximum
+    : lessonQueryQuestionMinimum
+  const runnableQuestions: QuizQuestion[] = [
+    {
+      id: `${lesson.id}-practice-query`,
+      kind: 'query',
+      prompt: lesson.practice.task,
+      hint: lesson.practice.hint,
+      options: [],
+      answer: '__query_succeeded__',
+      explanation: `One possible solution:\n${lesson.practice.solution}`
+    }
+  ]
+
+  if (queryCount === lessonQueryQuestionMaximum) {
+    const [example] = pickRandom(sqlBlocks, 1, random)
+    if (example) {
+      runnableQuestions.push({
+        id: `${lesson.id}-example-query`,
+        kind: 'query',
+        prompt: `Run the "${example.title}" query from this lesson.`,
+        starterSql: example.sql,
+        options: [],
+        answer: '__query_succeeded__',
+        explanation: example.explanation
+      })
+    }
+  }
+
+  const choiceCount = Math.max(0, count - runnableQuestions.length)
+  return shuffle([
+    ...runnableQuestions,
+    ...pickRandom(lesson.questions, choiceCount, random)
+  ], random)
 }
 
 /**

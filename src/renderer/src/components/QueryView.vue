@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import RunQueryShortcut from '@/renderer/src/components/RunQueryShortcut.vue'
 import { useAppStore } from '@/renderer/src/stores/app-store'
+import { isRunQueryShortcut } from '@/renderer/src/utils/keyboard-shortcuts'
 
 const store = useAppStore()
 const { activeQueryTabId, activeSession, queryTabs } = storeToRefs(store)
 const activeQueryTab = computed(() => store.activeQueryTab)
 
 function runQueryWithShortcut(event: KeyboardEvent): void {
-  if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return
+  if (!isRunQueryShortcut(event)) return
 
   event.preventDefault()
   void store.runActiveQuery()
@@ -57,7 +59,7 @@ function runQueryWithShortcut(event: KeyboardEvent): void {
           @click="store.runActiveQuery"
         >
           Run query
-          <span class="ml-2 text-xs font-normal opacity-75">⌘/Ctrl + Enter</span>
+          <RunQueryShortcut />
         </button>
         <p v-if="!activeSession" class="text-sm text-stone-600">
           Select or create a database session to run queries.

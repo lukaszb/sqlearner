@@ -2,7 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { SqlBreakdownItem } from '@/shared/course'
+import RunQueryShortcut from '@/renderer/src/components/RunQueryShortcut.vue'
 import { useLessonsStore } from '@/renderer/src/stores/lessons-store'
+import { isRunQueryShortcut } from '@/renderer/src/utils/keyboard-shortcuts'
 
 const props = defineProps<{
   runKey: string
@@ -33,7 +35,7 @@ function execute(): void {
 }
 
 function handleShortcut(event: KeyboardEvent): void {
-  if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return
+  if (!isRunQueryShortcut(event)) return
   event.preventDefault()
   execute()
 }
@@ -73,7 +75,7 @@ function reset(): void {
           @click="execute"
         >
           {{ run?.running ? 'Running...' : 'Run query' }}
-          <span class="ml-2 text-xs font-normal opacity-75">Cmd/Ctrl + Enter</span>
+          <RunQueryShortcut />
         </button>
         <button
           v-if="isDirty || run"

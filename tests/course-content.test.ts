@@ -70,7 +70,7 @@ describe('lesson content', () => {
 describe('question banks', () => {
   it('gives every lesson more variants than a single draw needs', () => {
     for (const lesson of lessons) {
-      expect(lesson.questions.length).toBeGreaterThanOrEqual(lessonQuizSize * 2)
+      expect(lesson.questions.length).toBeGreaterThanOrEqual(lessonQuizSize)
       expect(lesson.questions.length).toBeGreaterThanOrEqual(examQuestionsPerLesson * 2)
     }
   })

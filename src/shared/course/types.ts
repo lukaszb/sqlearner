@@ -25,9 +25,15 @@ export type LessonBlock =
 
 export interface QuizQuestion {
   id: string
+  /** Omitted for the existing multiple-choice question bank. */
+  kind?: 'choice' | 'query'
   prompt: string
   /** Optional SQL snippet shown above the answers. */
   code?: string
+  /** Optional initial SQL for a runnable query question. */
+  starterSql?: string
+  /** Hint shown alongside a runnable query question. */
+  hint?: string
   options: string[]
   /** Must be one of `options`; matched by value so options can be shuffled. */
   answer: string
