@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 const ipcChannels = {
   sessionsList: 'sessions:list',
   sessionsPrepare: 'sessions:prepare',
+  sessionsRename: 'sessions:rename',
   sessionsOpenFolder: 'sessions:open-folder',
   sessionsDelete: 'sessions:delete',
   databaseTables: 'database:tables',
@@ -14,6 +15,7 @@ const ipcChannels = {
 const api = {
   listSessions: () => ipcRenderer.invoke(ipcChannels.sessionsList),
   prepareDatabase: () => ipcRenderer.invoke(ipcChannels.sessionsPrepare),
+  renameSession: (sessionId, name) => ipcRenderer.invoke(ipcChannels.sessionsRename, sessionId, name),
   openSessionFolder: (sessionId) => ipcRenderer.invoke(ipcChannels.sessionsOpenFolder, sessionId),
   deleteSession: (sessionId) => ipcRenderer.invoke(ipcChannels.sessionsDelete, sessionId),
   listTables: (sessionId) => ipcRenderer.invoke(ipcChannels.databaseTables, sessionId),

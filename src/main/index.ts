@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ipcChannels } from '@/shared/ipc.js'
 import type { SessionSummary } from '@/shared/types.js'
-import { listSessions, openSessionFolder, deleteSession } from './services/session-service.js'
+import { deleteSession, listSessions, openSessionFolder, renameSession } from './services/session-service.js'
 import { listTables, prepareDatabase, previewTable, runQuery } from './services/database-service.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -44,6 +44,7 @@ function registerIpc(): void {
     if (!mainWindow) throw new Error('Main window is not ready')
     return prepareDatabase(mainWindow)
   })
+  ipcMain.handle(ipcChannels.sessionsRename, (_event, sessionId: string, name: string) => renameSession(sessionId, name))
   ipcMain.handle(ipcChannels.sessionsOpenFolder, (_event, sessionId: string) => openSessionFolder(sessionId))
   ipcMain.handle(ipcChannels.sessionsDelete, (_event, sessionId: string) => deleteSession(sessionId))
   ipcMain.handle(ipcChannels.databaseTables, async (_event, sessionId: string) => {

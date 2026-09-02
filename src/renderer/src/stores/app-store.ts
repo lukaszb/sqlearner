@@ -71,9 +71,7 @@ export const useAppStore = defineStore('app', {
       this.sessions = await window.sqlearner.listSessions()
       const activeSessionExists = this.sessions.some((session) => session.id === this.activeSessionId)
 
-      if ((!this.activeSessionId || !activeSessionExists) && this.sessions[0]) {
-        await this.selectSession(this.sessions[0].id)
-      } else if (!this.sessions[0]) {
+      if (this.activeSessionId && !activeSessionExists) {
         this.activeSessionId = undefined
         this.tables = []
         this.tablePreview = undefined
@@ -102,6 +100,26 @@ export const useAppStore = defineStore('app', {
     async selectSession(sessionId: string) {
       this.activeSessionId = sessionId
       await this.loadTables()
+    },
+    closeSession() {
+      this.activeSessionId = undefined
+      this.tables = []
+      this.selectedTable = undefined
+      this.tablePreview = undefined
+      this.databaseError = undefined
+    },
+    async renameActiveSession(name: string) {
+      if (!this.activeSessionId || !window.sqlearner) return false
+      this.error = undefined
+      try {
+        const updated = await window.sqlearner.renameSession(this.activeSessionId, name)
+        const index = this.sessions.findIndex((session) => session.id === updated.id)
+        if (index !== -1) this.sessions[index] = updated
+        return true
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Failed to rename session'
+        return false
+      }
     },
     async selectView(view: 'database' | 'queries') {
       this.activeView = view

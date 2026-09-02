@@ -3,7 +3,6 @@ import type { SessionSummary } from '@/shared/types'
 
 defineProps<{
   sessions: SessionSummary[]
-  activeSessionId?: string
 }>()
 
 const emit = defineEmits<{
@@ -22,27 +21,25 @@ function confirmDelete(session: SessionSummary): void {
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-y-auto p-3">
-    <div class="mb-2 flex items-center justify-between px-2">
-      <h2 class="text-xs font-semibold uppercase tracking-wide text-stone-500">Sessions</h2>
-    </div>
-
-    <p v-if="sessions.length === 0" class="px-2 text-sm text-stone-500">
-      No sessions yet.
-    </p>
-
-    <div v-for="session in sessions" :key="session.id" class="mb-2 rounded-md border border-stone-200 bg-white">
-      <button
-        class="w-full px-3 py-3 text-left"
-        :class="activeSessionId === session.id ? 'bg-emerald-50' : 'hover:bg-stone-50'"
-        @click="$emit('select', session.id)"
-      >
-        <div class="font-medium">{{ session.name }}</div>
-        <div class="mt-1 text-xs text-stone-500">
-          Last used {{ new Date(session.lastUsedAt).toLocaleString() }}
+  <div class="space-y-3" data-testid="session-list">
+    <article
+      v-for="session in sessions"
+      :key="session.id"
+      class="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm transition hover:border-stone-300 hover:shadow"
+      data-testid="session-card"
+    >
+      <button class="w-full px-5 py-4 text-left hover:bg-stone-50" @click="$emit('select', session.id)">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-lg font-semibold">{{ session.name }}</div>
+            <div class="mt-1 text-sm text-stone-500">
+              Last used {{ new Date(session.lastUsedAt).toLocaleString() }}
+            </div>
+          </div>
+          <span class="mt-1 text-stone-400" aria-hidden="true">→</span>
         </div>
       </button>
-      <div class="flex gap-2 border-t border-stone-100 px-3 py-2">
+      <div class="flex gap-4 border-t border-stone-100 px-5 py-2.5">
         <button class="text-xs font-medium text-brand hover:underline" @click="$emit('openFolder', session.id)">
           Show folder
         </button>
@@ -50,6 +47,6 @@ function confirmDelete(session: SessionSummary): void {
           Delete
         </button>
       </div>
-    </div>
+    </article>
   </div>
 </template>

@@ -3,6 +3,7 @@ import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSu
 interface SQLearnerApi {
   listSessions: () => Promise<SessionSummary[]>
   prepareDatabase: () => Promise<SessionSummary>
+  renameSession: (sessionId: string, name: string) => Promise<SessionSummary>
   openSessionFolder: (sessionId: string) => Promise<void>
   deleteSession: (sessionId: string) => Promise<void>
   listTables: (sessionId: string) => Promise<TableSummary[]>

@@ -69,6 +69,19 @@ export async function markSessionUsed(session: SessionSummary): Promise<SessionS
   return updated
 }
 
+export async function renameSession(sessionId: string, name: string): Promise<SessionSummary> {
+  const trimmedName = name.trim()
+  if (!trimmedName) throw new Error('Session name cannot be empty')
+  if (trimmedName.length > 100) throw new Error('Session name cannot exceed 100 characters')
+
+  const session = (await listSessions()).find((item) => item.id === sessionId)
+  if (!session) throw new Error('Session not found')
+
+  const updated = { ...session, name: trimmedName }
+  await saveSession(updated)
+  return updated
+}
+
 export async function openSessionFolder(sessionId: string): Promise<void> {
   const session = (await listSessions()).find((item) => item.id === sessionId)
   if (!session) throw new Error('Session not found')

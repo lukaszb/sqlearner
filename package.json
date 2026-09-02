@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
+    "better-sqlite3": "^13.0.3",
     "csv-parse": "^7.0.2",
     "pinia": "^3.0.2",
     "vue": "^3.5.13"
@@ -34,6 +35,7 @@
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.62.1",
     "@types/adm-zip": "^0.5.8",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.14.1",
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/tsconfig": "^0.7.0",
@@ -71,5 +73,10 @@
     "win": {
       "target": "nsis"
     }
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "electron@44.0.0": true,
+    "esbuild@0.25.12": true
   }
 }

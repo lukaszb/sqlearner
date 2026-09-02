@@ -6,6 +6,7 @@ declare global {
     sqlearner: {
       listSessions: () => Promise<SessionSummary[]>
       prepareDatabase: () => Promise<SessionSummary>
+      renameSession: (_sessionId: string, name: string) => Promise<SessionSummary>
       openSessionFolder: () => Promise<void>
       deleteSession: () => Promise<void>
       listTables: () => Promise<TableSummary[]>
@@ -31,6 +32,7 @@ test.beforeEach(async ({ page }) => {
     window.sqlearner = {
       listSessions: async () => [session],
       prepareDatabase: async () => session,
+      renameSession: async (_sessionId: string, name: string) => ({ ...session, name }),
       openSessionFolder: async () => undefined,
       deleteSession: async () => undefined,
       listTables: async () => [
@@ -63,6 +65,10 @@ test.beforeEach(async ({ page }) => {
 test('keeps database tables visible after navigating to queries and back', async ({ page }) => {
   await page.goto('/')
 
+  await expect(page.getByTestId('sessions-home')).toBeVisible()
+  await expect(page.getByTestId('workspace-sidebar')).toBeHidden()
+  await page.getByTestId('session-card').click()
+
   await expect(page.getByTestId('database-view')).toBeVisible()
   await expect(page.getByTestId('table-button').filter({ hasText: 'customers' })).toBeVisible()
   await expect(page.getByTestId('table-preview')).toContainText('sao paulo')
@@ -82,9 +88,25 @@ test('keeps database tables visible after navigating to queries and back', async
 test('runs a query from the Queries tab', async ({ page }) => {
   await page.goto('/')
 
+  await page.getByTestId('session-card').click()
   await page.getByTestId('nav-queries').click()
   await page.getByTestId('run-query').click()
 
   await expect(page.getByTestId('query-result')).toBeVisible()
   await expect(page.getByTestId('query-result')).toContainText('sao paulo')
+})
+
+test('renames a session and returns to the session list', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('session-card').click()
+
+  await page.getByTestId('session-name').fill('My SQL practice')
+  await page.getByTestId('session-name').press('Enter')
+  await expect(page.getByTestId('session-name')).toHaveValue('My SQL practice')
+
+  await page.getByTestId('back-to-sessions').click()
+  await expect(page.getByTestId('sessions-home')).toBeVisible()
+  await expect(page.getByTestId('workspace-sidebar')).toBeHidden()
+  await expect(page.getByTestId('session-card')).toContainText('My SQL practice')
+  await expect(page.getByTestId('create-session')).toBeVisible()
 })
