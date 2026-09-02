@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+#
+# Build the Windows installer and publish it as a GitHub release.
+#
+# Usage: scripts/release [options]
+#
+#   --draft            Upload the asset but leave the release unpublished.
+#   --skip-checks      Skip lint and unit tests (typecheck still runs in build).
+#   --skip-build       Reuse the installer already sitting in release/.
+#   --notes <file>     Markdown file to use as the release body. Without it,
+#                      GitHub generates notes from the commit log.
+#   --repo <owner/name>  Defaults to lukaszb/sqlearner.
+#   -h, --help
+#
+# Needs a GitHub token with `repo` scope (classic) or Contents: write
+# (fine-grained), read from GITHUB_TOKEN, GH_TOKEN, a GITHUB_TOKEN= line in the
+# gitignored .env, or `gh auth token`.
+#
+# Run this on the build machine. Asset upload goes to uploads.github.com, which
+# the Cowork sandbox cannot reach.
+
+set -euo pipefail
+
+repo="lukaszb/sqlearner"
+draft=false
+skip_checks=false
+skip_build=false
+notes_file=""
+
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --draft) draft=true ;;
+    --skip-checks) skip_checks=true ;;
+    --skip-build) skip_build=true ;;
+    --notes) notes_file="${2:?--notes needs a file}"; shift ;;
+    --repo) repo="${2:?--repo needs owner/name}"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'release: unknown option: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+cd "$(dirname "$0")/.."
+
+total=7
+completed=0
+step() {
+  completed=$((completed + 1))
+  printf '\n\033[1m[%d/%d] %s\033[0m\n' "$completed" "$total" "$1"
+}
+fail() { printf '\nrelease: %s\n' "$1" >&2; exit 1; }
+
+# GitHub REST call against the target repo: api <METHOD> <PATH> [curl args...]
+api() {
+  local method="$1" endpoint="$2"
+  shift 2
+  curl -sS -X "$method" \
+    -H "Authorization: Bearer $token" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$repo$endpoint" "$@"
+}
+
+step "Preflight"
+for tool in node npm git curl; do
+  command -v "$tool" >/dev/null 2>&1 || fail "$tool is required but not on PATH"
+done
+
+token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+if [ -z "$token" ] && [ -f .env ]; then
+  # .env is gitignored, so it survives the clean step below
+  token="$(sed -n 's/^GITHUB_TOKEN=//p' .env | tail -1 | tr -d "\"'")"
+fi
+if [ -z "$token" ] && command -v gh >/dev/null 2>&1; then
+  token="$(gh auth token 2>/dev/null || true)"
+fi
+[ -n "$token" ] || fail "no GitHub token; set GITHUB_TOKEN, put it in .env or run 'gh auth login'"
+
+[ -z "$(git status --porcelain)" ] || fail "working tree is dirty; commit or stash first"
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+git fetch --quiet origin "$branch"
+[ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$branch")" ] ||
+  fail "$branch differs from origin/$branch; push or pull first"
+
+version="$(node -p "require('./package.json').version")"
+tag="v$version"
+commit="$(git rev-parse HEAD)"
+installer="release/SQLearner Setup $version.exe"
+asset_name="SQLearner-Setup-$version.exe"
+
+[ "$(api GET "/releases/tags/$tag" -o /dev/null -w '%{http_code}')" != "200" ] ||
+  fail "release $tag already exists; bump the version in package.json first"
+
+# Drafts are invisible to the tags endpoint, so look for a leftover one by name.
+existing_draft="$(api GET "/releases?per_page=100" | TAG="$tag" node -e '
+  let raw = ""
+  process.stdin.on("data", (chunk) => { raw += chunk })
+  process.stdin.on("end", () => {
+    const stale = JSON.parse(raw).find((r) => r.draft && r.tag_name === process.env.TAG)
+    process.stdout.write(stale ? String(stale.id) : "")
+  })
+')"
+[ -z "$existing_draft" ] ||
+  fail "a draft release for $tag already exists (id $existing_draft); delete or publish it first"
+
+printf 'repo    %s\nbranch  %s @ %s\nversion %s -> %s\n' \
+  "$repo" "$branch" "${commit:0:7}" "$version" "$tag"
+
+step "Cleaning build outputs"
+# tsc runs in composite mode: with a stale tsbuildinfo left behind it treats a
+# deleted dist/ as up to date and emits nothing, which packages an installer
+# with no main process. Drop the build info alongside the outputs.
+rm -rf dist release
+rm -f ./*.tsbuildinfo
+echo "removed dist/, release/ and *.tsbuildinfo"
+
+step "Running lint and tests"
+if $skip_checks; then
+  echo "skipped (--skip-checks)"
+else
+  npm run lint
+  npm test
+fi
+
+step "Building the Windows installer"
+if $skip_build; then
+  echo "skipped (--skip-build)"
+else
+  npm run build:win
+fi
+[ -f "$installer" ] || fail "installer not found: $installer"
+
+step "Verifying the packaged archive"
+node scripts/verify-asar.mjs release/win-unpacked/resources/app.asar
+
+step "Creating release $tag"
+payload="$(NOTES_FILE="$notes_file" TAG="$tag" COMMIT="$commit" VERSION="$version" node -e '
+  const { readFileSync } = require("node:fs")
+  const notesFile = process.env.NOTES_FILE
+  const body = notesFile ? readFileSync(notesFile, "utf8") : undefined
+  process.stdout.write(JSON.stringify({
+    tag_name: process.env.TAG,
+    target_commitish: process.env.COMMIT,
+    name: `SQLearner ${process.env.VERSION}`,
+    body,
+    draft: true,
+    prerelease: false,
+    generate_release_notes: body === undefined
+  }))
+')"
+release_id="$(api POST /releases -d "$payload" | node -e '
+  let raw = ""
+  process.stdin.on("data", (chunk) => { raw += chunk })
+  process.stdin.on("end", () => {
+    const response = JSON.parse(raw)
+    if (!response.id) {
+      console.error(response.message ?? raw)
+      process.exit(1)
+    }
+    process.stdout.write(String(response.id))
+  })
+')"
+echo "draft release id $release_id"
+
+step "Uploading $asset_name"
+local_size="$(node -p "require('node:fs').statSync(process.argv[1]).size" "$installer")"
+curl -f -# -X POST \
+  -H "Authorization: Bearer $token" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @"$installer" \
+  "https://uploads.github.com/repos/$repo/releases/$release_id/assets?name=$asset_name" \
+  -o /dev/null ||
+  fail "upload failed; the draft release $tag is still there, retry with --skip-build"
+
+remote_size="$(api GET "/releases/$release_id" | ASSET="$asset_name" node -e '
+  let raw = ""
+  process.stdin.on("data", (chunk) => { raw += chunk })
+  process.stdin.on("end", () => {
+    const asset = JSON.parse(raw).assets.find((item) => item.name === process.env.ASSET)
+    process.stdout.write(asset ? String(asset.size) : "0")
+  })
+')"
+[ "$remote_size" = "$local_size" ] ||
+  fail "uploaded $remote_size bytes but the installer is $local_size bytes"
+echo "verified $local_size bytes"
+
+if $draft; then
+  echo "left as a draft (--draft); publish it from the GitHub UI when ready"
+  exit 0
+fi
+
+api PATCH "/releases/$release_id" -d '{"draft":false,"make_latest":"true"}' -o /dev/null
+printf '\nreleased https://github.com/%s/releases/tag/%s\n' "$repo" "$tag"

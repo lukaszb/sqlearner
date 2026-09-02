@@ -57,3 +57,34 @@ npm run build:win:portable
 `npm run build:win` creates a Windows x64 installer in `release/`. `npm run build:win:portable` creates a portable Windows x64 `.exe` in the same directory. The Windows build runs from macOS through Electron Builder. Document any required signing, notarization, or Wine setup before release.
 
 Windows packaging uses the prebuilt `better-sqlite3` binary included by the dependency. Electron Builder's native dependency rebuild is disabled because `node-gyp` cannot cross-compile a Windows x64 addon on a macOS ARM host.
+
+## Releasing
+
+```bash
+GITHUB_TOKEN=<token> scripts/release
+```
+
+Bump `version` in `package.json` first — the script derives the tag (`v<version>`)
+and the asset name from it, and refuses to run if that release already exists.
+The token needs `repo` scope (classic) or `Contents: write` (fine-grained); it can
+also come from `GH_TOKEN`, a `GITHUB_TOKEN=` line in the gitignored `.env`, or
+`gh auth token`.
+
+The script cleans, builds, verifies and publishes in one pass: it wipes `dist/`,
+`release/` and the `*.tsbuildinfo` files, runs lint and unit tests, builds the
+Windows installer, checks the packed `app.asar` with `scripts/verify-asar.mjs`,
+creates a draft release, uploads the installer, compares the uploaded size against
+the local file and only then publishes. Use `--draft` to stop before publishing,
+`--skip-checks` to skip lint and tests, and `--skip-build` to retry an upload
+against the installer already in `release/`.
+
+Deleting `dist/` without deleting the `*.tsbuildinfo` files is what breaks a
+manual build: `tsc` runs in composite mode, sees an up-to-date build info file and
+emits nothing, so the installer ships without a main process. Use `npm run clean`
+rather than `rm -rf dist`.
+
+`scripts/verify-asar.mjs` resolves every relative import in `dist/main` and
+`dist/preload` against the contents of the packed archive. It exists because
+0.1.0 shipped without `dist/shared` and died at launch with
+`ERR_MODULE_NOT_FOUND`; `tests/package-files.test.ts` guards the same mistake at
+the source level, by checking the `build.files` globs against the imports.

@@ -18,10 +18,13 @@
     "build:mac": "npm run build && electron-builder --mac",
     "build:win": "npm run build && electron-builder --win --x64",
     "build:win:portable": "npm run build && electron-builder --win portable --x64",
+    "clean": "rm -rf dist release && rm -f ./*.tsbuildinfo",
     "typecheck": "vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.vitest.json",
     "lint": "eslint . --ext .ts,.vue",
     "test": "vitest run --config vitest.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify:asar": "node scripts/verify-asar.mjs",
+    "release": "scripts/release"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
