@@ -6,6 +6,13 @@ import { useAppStore } from '@/renderer/src/stores/app-store'
 const store = useAppStore()
 const { activeQueryTabId, activeSession, queryTabs } = storeToRefs(store)
 const activeQueryTab = computed(() => store.activeQueryTab)
+
+function runQueryWithShortcut(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || (!event.metaKey && !event.ctrlKey)) return
+
+  event.preventDefault()
+  void store.runActiveQuery()
+}
 </script>
 
 <template>
@@ -39,6 +46,7 @@ const activeQueryTab = computed(() => store.activeQueryTab)
         class="m-6 mb-3 resize-none rounded-md border border-stone-300 bg-white p-4 font-mono text-sm outline-none focus:border-brand"
         data-testid="query-editor"
         spellcheck="false"
+        @keydown="runQueryWithShortcut"
       />
 
       <div class="flex items-center gap-3 px-6 pb-3">
@@ -49,6 +57,7 @@ const activeQueryTab = computed(() => store.activeQueryTab)
           @click="store.runActiveQuery"
         >
           Run query
+          <span class="ml-2 text-xs font-normal opacity-75">⌘/Ctrl + Enter</span>
         </button>
         <p v-if="!activeSession" class="text-sm text-stone-600">
           Select or create a database session to run queries.

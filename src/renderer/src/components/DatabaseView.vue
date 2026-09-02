@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '@/renderer/src/stores/app-store'
 
 const store = useAppStore()
+const copiedTableName = ref<string>()
+let copiedMessageTimeout: number | undefined
 const {
   activeSession,
   databaseError,
@@ -26,6 +28,33 @@ watch(
   },
   { immediate: true }
 )
+
+async function copyTableName(tableName: string): Promise<void> {
+  let copied = false
+
+  try {
+    await navigator.clipboard.writeText(tableName)
+    copied = true
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = tableName
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    copied = document.execCommand('copy')
+    textarea.remove()
+  }
+
+  if (!copied) return
+  copiedTableName.value = tableName
+  window.clearTimeout(copiedMessageTimeout)
+  copiedMessageTimeout = window.setTimeout(() => {
+    if (copiedTableName.value === tableName) copiedTableName.value = undefined
+  }, 1400)
+}
+
+onUnmounted(() => window.clearTimeout(copiedMessageTimeout))
 </script>
 
 <template>
@@ -70,13 +99,30 @@ watch(
       <button
         v-for="table in tables"
         :key="table.name"
-        class="mb-2 w-full rounded-md border px-3 py-2 text-left"
+        class="table-tile group mb-2 rounded-md border bg-white px-3 py-2 text-left"
         data-testid="table-button"
         :class="selectedTable === table.name ? 'border-brand bg-emerald-50' : 'border-stone-200 hover:bg-stone-50'"
         @click="store.selectTable(table.name)"
       >
-        <div class="font-medium">{{ table.name }}</div>
-        <div class="text-xs text-stone-500">
+        <div class="flex items-center gap-2">
+          <span
+            class="table-name min-w-0 font-medium hover:text-brand hover:underline"
+            data-testid="table-name"
+            role="button"
+            tabindex="0"
+            :title="`Copy ${table.name}`"
+            :aria-label="`Copy table name ${table.name}`"
+            @click="copyTableName(table.name)"
+            @keydown.enter.stop.prevent="copyTableName(table.name)"
+            @keydown.space.stop.prevent="copyTableName(table.name)"
+          >
+            {{ table.name }}
+          </span>
+          <span v-if="copiedTableName === table.name" class="shrink-0 text-xs font-medium text-brand" aria-live="polite">
+            Copied
+          </span>
+        </div>
+        <div class="whitespace-nowrap text-xs text-stone-500">
           {{ table.rowCount }} rows · {{ table.columns.length }} columns
         </div>
       </button>
@@ -123,3 +169,34 @@ watch(
     </section>
   </div>
 </template>
+
+<style scoped>
+.table-tile {
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.table-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-tile:hover,
+.table-tile:focus-within {
+  z-index: 20;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+  box-shadow: 0 10px 20px rgb(0 0 0 / 12%);
+}
+
+.table-tile:hover .table-name,
+.table-tile:focus-within .table-name {
+  overflow: visible;
+  text-overflow: clip;
+}
+</style>

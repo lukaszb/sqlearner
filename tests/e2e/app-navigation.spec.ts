@@ -3,6 +3,7 @@ import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSu
 
 declare global {
   interface Window {
+    deleteSessionCalled?: boolean
     sqlearner: {
       listSessions: () => Promise<SessionSummary[]>
       prepareDatabase: () => Promise<SessionSummary>
@@ -19,6 +20,7 @@ declare global {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    window.deleteSessionCalled = false
     const session: SessionSummary = {
       id: 'session-e2e',
       name: 'SQLearner E2E',
@@ -34,7 +36,9 @@ test.beforeEach(async ({ page }) => {
       prepareDatabase: async () => session,
       renameSession: async (_sessionId: string, name: string) => ({ ...session, name }),
       openSessionFolder: async () => undefined,
-      deleteSession: async () => undefined,
+      deleteSession: async () => {
+        window.deleteSessionCalled = true
+      },
       listTables: async () => [
         { name: 'customers', rowCount: 3, columns: ['customer_id', 'city', 'state'] },
         { name: 'orders', rowCount: 3, columns: ['order_id', 'customer_id', 'status', 'total'] }
@@ -96,6 +100,28 @@ test('runs a query from the Queries tab', async ({ page }) => {
   await expect(page.getByTestId('query-result')).toContainText('sao paulo')
 })
 
+test('runs a query with Ctrl+Enter from the editor', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByTestId('session-card').click()
+  await page.getByTestId('nav-queries').click()
+  await page.getByTestId('query-editor').press('Control+Enter')
+
+  await expect(page.getByTestId('query-result')).toBeVisible()
+  await expect(page.getByTestId('query-result')).toContainText('sao paulo')
+})
+
+test('runs a query with Meta+Enter from the editor', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByTestId('session-card').click()
+  await page.getByTestId('nav-queries').click()
+  await page.getByTestId('query-editor').press('Meta+Enter')
+
+  await expect(page.getByTestId('query-result')).toBeVisible()
+  await expect(page.getByTestId('query-result')).toContainText('sao paulo')
+})
+
 test('renames a session and returns to the session list', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('session-card').click()
@@ -113,4 +139,23 @@ test('renames a session and returns to the session list', async ({ page }) => {
   await expect(page.getByTestId('workspace-sidebar')).toBeHidden()
   await expect(page.getByTestId('session-card')).toContainText('My SQL practice')
   await expect(page.getByTestId('create-session')).toBeVisible()
+})
+
+test('confirms session deletion in a custom modal', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByTestId('delete-session-button').click()
+  const modal = page.getByTestId('delete-session-modal')
+  await expect(modal).toBeVisible()
+  await expect(modal).toContainText('SQLearner E2E')
+  await expect(page.getByTestId('cancel-delete-session')).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(modal).toBeHidden()
+  await expect.poll(() => page.evaluate(() => window.deleteSessionCalled)).toBe(false)
+
+  await page.getByTestId('delete-session-button').click()
+  await page.getByTestId('confirm-delete-session').click()
+  await expect(modal).toBeHidden()
+  await expect.poll(() => page.evaluate(() => window.deleteSessionCalled)).toBe(true)
 })
