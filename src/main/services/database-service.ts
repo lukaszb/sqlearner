@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3'
 import AdmZip from 'adm-zip'
-import type { BrowserWindow } from 'electron'
+import { app, type BrowserWindow } from 'electron'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parse } from 'csv-parse/sync'
 import { ipcChannels } from '@/shared/ipc.js'
@@ -11,6 +11,7 @@ import { createPreparingSession, markSessionUsed, saveSession } from './session-
 
 const kaggleDatasetHandle = 'olistbr/brazilian-ecommerce'
 const kaggleDatasetUrl = `https://www.kaggle.com/api/v1/datasets/download/${kaggleDatasetHandle}`
+const kaggleCacheMaxAgeMs = 30 * 24 * 60 * 60 * 1000
 const expectedCsvFiles = new Set([
   'olist_customers_dataset.csv',
   'olist_geolocation_dataset.csv',
@@ -62,21 +63,69 @@ export function assertCompleteKaggleDataset(csvFiles: string[]): void {
   }
 }
 
+export function isKaggleCacheFresh(modifiedAtMs: number, nowMs = Date.now()): boolean {
+  return nowMs - modifiedAtMs <= kaggleCacheMaxAgeMs
+}
+
+function assertCompleteKaggleArchive(archivePath: string): void {
+  const csvFiles = new AdmZip(archivePath)
+    .getEntries()
+    .filter((entry) => !entry.isDirectory && entry.entryName.toLowerCase().endsWith('.csv'))
+    .map((entry) => entry.entryName)
+  assertCompleteKaggleDataset(csvFiles)
+}
+
+async function hasFreshKaggleCache(archivePath: string): Promise<boolean> {
+  try {
+    const cacheStat = await stat(archivePath)
+    if (!isKaggleCacheFresh(cacheStat.mtimeMs)) return false
+    assertCompleteKaggleArchive(archivePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function downloadKaggleArchive(archivePath: string): Promise<void> {
+  const temporaryPath = `${archivePath}.download`
+
+  try {
+    const response = await fetch(kaggleDatasetUrl, { redirect: 'follow' })
+    if (!response.ok) {
+      throw new Error(`Kaggle download failed with HTTP ${response.status}`)
+    }
+
+    await writeFile(temporaryPath, Buffer.from(await response.arrayBuffer()))
+    assertCompleteKaggleArchive(temporaryPath)
+    await rm(archivePath, { force: true })
+    await rename(temporaryPath, archivePath)
+  } catch (error) {
+    await rm(temporaryPath, { force: true })
+    throw error
+  }
+}
+
 async function downloadKaggleDataset(session: SessionSummary, window: BrowserWindow): Promise<string> {
   const outputDir = path.join(session.folderPath, 'kaggle-data')
-  const archivePath = path.join(session.folderPath, 'brazilian-ecommerce.zip')
-  sendProgress(window, {
-    sessionId: session.id,
-    label: 'Downloading the complete Olist dataset from Kaggle',
-    percent: 25
-  })
+  const cacheDirectory = path.join(app.getPath('userData'), 'cache', 'kaggle')
+  const archivePath = path.join(cacheDirectory, 'brazilian-ecommerce.zip')
+  await mkdir(cacheDirectory, { recursive: true })
 
-  const response = await fetch(kaggleDatasetUrl, { redirect: 'follow' })
-  if (!response.ok) {
-    throw new Error(`Kaggle download failed with HTTP ${response.status}`)
+  if (await hasFreshKaggleCache(archivePath)) {
+    sendProgress(window, {
+      sessionId: session.id,
+      label: 'Using cached Olist dataset',
+      percent: 25
+    })
+  } else {
+    sendProgress(window, {
+      sessionId: session.id,
+      label: 'Downloading the complete Olist dataset from Kaggle',
+      percent: 25
+    })
+    await downloadKaggleArchive(archivePath)
   }
 
-  await writeFile(archivePath, Buffer.from(await response.arrayBuffer()))
   sendProgress(window, {
     sessionId: session.id,
     label: 'Extracting Kaggle dataset',
@@ -85,7 +134,6 @@ async function downloadKaggleDataset(session: SessionSummary, window: BrowserWin
 
   await mkdir(outputDir, { recursive: true })
   new AdmZip(archivePath).extractAllTo(outputDir, true)
-  await rm(archivePath, { force: true })
   return outputDir
 }
 
@@ -148,6 +196,7 @@ export async function prepareDatabase(window: BrowserWindow): Promise<SessionSum
     const datasetPath = await downloadKaggleDataset(session, window)
     sendProgress(window, { sessionId: session.id, label: 'Importing CSV files into SQLite', percent: 45 })
     await importKaggleDirectory(datasetPath, session.databasePath, window, session.id)
+    await rm(datasetPath, { recursive: true, force: true })
   } catch (error) {
     await rm(session.folderPath, { recursive: true, force: true })
     const message = error instanceof Error ? error.message : 'Unknown Kaggle download error'

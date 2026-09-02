@@ -15,6 +15,8 @@ npm run dev
 
 When a session is created, SQLearner downloads the complete public Olist dataset directly from Kaggle and imports all nine CSV files into SQLite. Python, `kagglehub`, and Kaggle API credentials are not required.
 
+The downloaded ZIP is cached in the OS-specific app data directory for 30 days and reused when creating additional sessions. An expired or invalid cache is downloaded again. Extracted CSV files are removed from the session after a successful import.
+
 An incomplete download or import fails session creation instead of silently substituting a sample database.
 
 Run checks:

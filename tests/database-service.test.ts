@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import { assertCompleteKaggleDataset, getTableColumns } from '@/main/services/database-service'
+import { assertCompleteKaggleDataset, getTableColumns, isKaggleCacheFresh } from '@/main/services/database-service'
 
 describe('database metadata', () => {
   it('returns columns for empty tables', () => {
@@ -32,5 +32,18 @@ describe('Kaggle dataset validation', () => {
 
   it('rejects an incomplete Olist dataset', () => {
     expect(() => assertCompleteKaggleDataset(completeDataset.slice(1))).toThrow('olist_customers_dataset.csv')
+  })
+})
+
+describe('Kaggle cache freshness', () => {
+  const dayMs = 24 * 60 * 60 * 1000
+  const now = Date.parse('2026-09-02T12:00:00.000Z')
+
+  it('reuses a cache file that is no more than 30 days old', () => {
+    expect(isKaggleCacheFresh(now - 30 * dayMs, now)).toBe(true)
+  })
+
+  it('refreshes a cache file that is older than 30 days', () => {
+    expect(isKaggleCacheFresh(now - 30 * dayMs - 1, now)).toBe(false)
   })
 })
