@@ -1,6 +1,6 @@
 {
   "name": "sqlearner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Electron desktop app for learning SQL with a local SQLite dataset.",
   "main": "dist/main/index.js",
   "type": "module",
@@ -64,6 +64,7 @@
       "dist/main/**/*",
       "dist/preload/**/*",
       "dist/renderer/**/*",
+      "dist/shared/**/*",
       "package.json"
     ],
     "directories": {
