@@ -59,12 +59,16 @@
   "build": {
     "appId": "com.sqlearner.app",
     "productName": "SQLearner",
+    "npmRebuild": false,
     "files": [
-      "dist/**/*",
+      "dist/main/**/*",
+      "dist/preload/**/*",
+      "dist/renderer/**/*",
       "package.json"
     ],
     "directories": {
-      "buildResources": "assets"
+      "buildResources": "assets",
+      "output": "release"
     },
     "mac": {
       "target": "dmg"

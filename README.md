@@ -36,4 +36,6 @@ npm run build:win
 npm run build:win:portable
 ```
 
-`npm run build:win` creates a Windows x64 installer. `npm run build:win:portable` creates a portable Windows x64 `.exe`. The Windows build runs from macOS through Electron Builder. Document any required signing, notarization, or Wine setup before release.
+`npm run build:win` creates a Windows x64 installer in `release/`. `npm run build:win:portable` creates a portable Windows x64 `.exe` in the same directory. The Windows build runs from macOS through Electron Builder. Document any required signing, notarization, or Wine setup before release.
+
+Windows packaging uses the prebuilt `better-sqlite3` binary included by the dependency. Electron Builder's native dependency rebuild is disabled because `node-gyp` cannot cross-compile a Windows x64 addon on a macOS ARM host.
