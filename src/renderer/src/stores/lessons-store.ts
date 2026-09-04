@@ -34,7 +34,6 @@ export interface QuizState {
   index: number
   finished: boolean
   passed: boolean
-  useSandbox: boolean
 }
 
 export interface RunState {
@@ -51,8 +50,6 @@ interface LessonsState {
   quiz: QuizState | undefined
   attempts: Record<string, number>
   runs: Record<string, RunState>
-  sandboxBusy: boolean
-  sandboxNotice: string | undefined
   error: string | undefined
 }
 
@@ -65,8 +62,6 @@ export const useLessonsStore = defineStore('lessons', {
     quiz: undefined,
     attempts: {},
     runs: {},
-    sandboxBusy: false,
-    sandboxNotice: undefined,
     error: undefined
   }),
   getters: {
@@ -119,7 +114,6 @@ export const useLessonsStore = defineStore('lessons', {
       this.quiz = undefined
       this.runs = {}
       this.attempts = {}
-      this.sandboxNotice = undefined
     },
     openLesson(lessonId: string) {
       const located = findLesson(lessonId)
@@ -147,8 +141,7 @@ export const useLessonsStore = defineStore('lessons', {
         })),
         index: 0,
         finished: false,
-        passed: false,
-        useSandbox: Boolean(located.module.usesSandbox)
+        passed: false
       }
     },
     startExam(moduleId: string) {
@@ -164,8 +157,7 @@ export const useLessonsStore = defineStore('lessons', {
         })),
         index: 0,
         finished: false,
-        passed: false,
-        useSandbox: Boolean(module.usesSandbox)
+        passed: false
       }
     },
     retryQuiz() {
@@ -202,9 +194,9 @@ export const useLessonsStore = defineStore('lessons', {
       item.queryError = undefined
       item.queryResult = undefined
       try {
-        item.queryResult = window.sqlearner.runLessonQuery
-          ? await window.sqlearner.runLessonQuery(app.activeSessionId, item.queryDraft, quiz.useSandbox)
-          : await window.sqlearner.runQuery(app.activeSessionId, item.queryDraft)
+        const result = await window.sqlearner.runQuery(app.activeSessionId, item.queryDraft)
+        item.queryResult = result
+        if (result.changes !== undefined) app.markTablesStale()
         item.selected = item.question.answer
       } catch (error) {
         item.queryError = error instanceof Error ? error.message : 'Query failed'
@@ -238,15 +230,14 @@ export const useLessonsStore = defineStore('lessons', {
       else this.progress.exams[quiz.targetId] = entry
       await this.persistProgress()
     },
-    async runSql(key: string, sql: string, useSandbox: boolean) {
+    async runSql(key: string, sql: string) {
       const app = useAppStore()
       if (!app.activeSessionId || !window.sqlearner) return
       this.runs[key] = { running: true }
       try {
-        const result = window.sqlearner.runLessonQuery
-          ? await window.sqlearner.runLessonQuery(app.activeSessionId, sql, useSandbox)
-          : await window.sqlearner.runQuery(app.activeSessionId, sql)
+        const result = await window.sqlearner.runQuery(app.activeSessionId, sql)
         this.runs[key] = { running: false, result }
+        if (result.changes !== undefined) app.markTablesStale()
       } catch (error) {
         this.runs[key] = { running: false, error: error instanceof Error ? error.message : 'Query failed' }
       }
@@ -254,19 +245,11 @@ export const useLessonsStore = defineStore('lessons', {
     clearRun(key: string) {
       delete this.runs[key]
     },
-    async resetSandbox() {
+    /** Resets the working copy and drops the results of the lesson statements that ran against it. */
+    async resetDatabase() {
       const app = useAppStore()
-      if (!app.activeSessionId || !window.sqlearner?.resetSandbox) return
-      this.sandboxBusy = true
-      this.sandboxNotice = undefined
-      try {
-        await window.sqlearner.resetSandbox(app.activeSessionId)
-        this.sandboxNotice = 'Sandbox restored from the session database.'
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Failed to reset the sandbox'
-      } finally {
-        this.sandboxBusy = false
-      }
+      const reset = await app.resetDatabase()
+      if (reset) this.runs = {}
     }
   }
 })

@@ -9,29 +9,43 @@ import { isRunQueryShortcut } from '@/renderer/src/utils/keyboard-shortcuts'
 const props = defineProps<{
   runKey: string
   sql: string
+  modelValue?: string
   title?: string
   explanation?: string
   breakdown?: SqlBreakdownItem[]
-  useSandbox?: boolean
+  writesData?: boolean
+  resetLabel?: string
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
 }>()
 
 const store = useLessonsStore()
 const { runs } = storeToRefs(store)
 
-const draft = ref(props.sql)
+const draft = ref(props.modelValue ?? props.sql)
 watch(
   () => props.sql,
   (next) => {
+    if (props.modelValue !== undefined) return
     draft.value = next
   }
 )
+watch(
+  () => props.modelValue,
+  (next) => {
+    if (next !== undefined && next !== draft.value) draft.value = next
+  }
+)
+watch(draft, (next) => emit('update:modelValue', next))
 
 const run = computed(() => runs.value[props.runKey])
 const rows = computed(() => Math.min(18, Math.max(3, draft.value.split('\n').length)))
 const isDirty = computed(() => draft.value !== props.sql)
 
 function execute(): void {
-  void store.runSql(props.runKey, draft.value, Boolean(props.useSandbox))
+  void store.runSql(props.runKey, draft.value)
 }
 
 function handleShortcut(event: KeyboardEvent): void {
@@ -50,8 +64,8 @@ function reset(): void {
   <section class="rounded-lg border border-stone-300 bg-white" data-testid="sql-block">
     <header v-if="title" class="flex items-center gap-2 border-b border-stone-200 px-4 py-2.5">
       <h4 class="text-sm font-semibold">{{ title }}</h4>
-      <span v-if="useSandbox" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-        sandbox
+      <span v-if="writesData" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+        writes data
       </span>
     </header>
 
@@ -83,7 +97,7 @@ function reset(): void {
           type="button"
           @click="reset"
         >
-          Reset example
+          {{ resetLabel ?? 'Reset example' }}
         </button>
         <p v-if="run?.result" class="text-sm text-stone-600">
           <span v-if="run.result.message">{{ run.result.message }} - </span>

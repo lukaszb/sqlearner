@@ -5,6 +5,7 @@ import { useAppStore } from '@/renderer/src/stores/app-store'
 
 const store = useAppStore()
 const copiedTableName = ref<string>()
+const confirmingReset = ref(false)
 let copiedMessageTimeout: number | undefined
 const {
   activeSession,
@@ -12,10 +13,17 @@ const {
   databaseLoading,
   electronReady,
   loading,
+  resetBusy,
+  resetNotice,
   selectedTable,
   tablePreview,
   tables
 } = storeToRefs(store)
+
+async function resetDatabase(): Promise<void> {
+  confirmingReset.value = false
+  await store.resetDatabase()
+}
 
 watch(
   [activeSession, tables, selectedTable],
@@ -87,8 +95,8 @@ onUnmounted(() => window.clearTimeout(copiedMessageTimeout))
           Refresh
         </button>
       </div>
-      <p v-if="activeSession" class="mb-3 truncate text-xs text-stone-500" :title="activeSession.databasePath">
-        {{ activeSession.databasePath }}
+      <p v-if="activeSession" class="mb-3 truncate text-xs text-stone-500" :title="activeSession.workingDatabasePath">
+        {{ activeSession.workingDatabasePath }}
       </p>
       <p v-if="databaseLoading && tables.length === 0" class="text-sm text-stone-500">
         Opening database...
@@ -129,11 +137,47 @@ onUnmounted(() => window.clearTimeout(copiedMessageTimeout))
     </aside>
 
     <section class="min-w-0 overflow-auto p-6">
-      <div class="mb-4 flex items-end justify-between">
+      <div class="mb-4 flex items-end justify-between gap-4">
         <div>
           <h2 class="text-2xl font-semibold">{{ selectedTable ?? 'Select a table' }}</h2>
           <p class="text-sm text-stone-600">
             {{ databaseLoading ? 'Loading table data...' : `${tables.length} tables available. Previewing up to 100 rows.` }}
+          </p>
+        </div>
+
+        <div class="shrink-0 text-right">
+          <div v-if="!confirmingReset" class="flex items-center justify-end gap-3">
+            <span v-if="resetNotice" class="text-sm text-emerald-800" data-testid="reset-database-notice">
+              {{ resetNotice }}
+            </span>
+            <button
+              class="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-700 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50"
+              data-testid="reset-database"
+              :disabled="resetBusy"
+              @click="confirmingReset = true"
+            >
+              {{ resetBusy ? 'Resetting...' : 'Reset database' }}
+            </button>
+          </div>
+
+          <div v-else class="flex items-center justify-end gap-3" data-testid="reset-database-confirm">
+            <span class="text-sm text-stone-700">Discard every change and rebuild from the import?</span>
+            <button
+              class="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700"
+              data-testid="reset-database-confirm-button"
+              @click="resetDatabase"
+            >
+              Reset
+            </button>
+            <button
+              class="rounded-md px-2 py-1.5 text-sm font-medium text-stone-600 hover:bg-stone-100"
+              @click="confirmingReset = false"
+            >
+              Cancel
+            </button>
+          </div>
+          <p class="mt-1 text-xs text-stone-500">
+            Queries and lessons write to this copy. The original import is kept aside.
           </p>
         </div>
       </div>

@@ -4,7 +4,10 @@ export interface SessionSummary {
   id: string
   name: string
   folderPath: string
+  /** The untouched database built by the import; only ever read to rebuild the working copy. */
   databasePath: string
+  /** The writable copy every table preview, query and lesson runs against. */
+  workingDatabasePath: string
   createdAt: string
   lastUsedAt: string
   status: SessionStatus

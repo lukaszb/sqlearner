@@ -9,19 +9,22 @@ import SqlBlock from '@/renderer/src/components/SqlBlock.vue'
 
 const appStore = useAppStore()
 const store = useLessonsStore()
-const { quiz, selection, sandboxBusy, sandboxNotice } = storeToRefs(store)
+const { quiz, selection } = storeToRefs(store)
+const { resetBusy, resetNotice } = storeToRefs(appStore)
 
 const located = computed(() => store.activeLesson)
 const examModule = computed(() => store.activeExamModule)
 const lesson = computed(() => located.value?.lesson)
 const module = computed(() => located.value?.module ?? examModule.value)
-const usesSandbox = computed(() => Boolean(module.value?.usesSandbox))
+const changesData = computed(() => Boolean(module.value?.changesData))
 const showHint = ref(false)
 const showSolution = ref(false)
+const practiceDraft = ref('')
 
 watch(selection, () => {
   showHint.value = false
   showSolution.value = false
+  practiceDraft.value = ''
 })
 
 const lessonDone = computed(() => (lesson.value ? store.isLessonDone(lesson.value.id) : false))
@@ -37,6 +40,10 @@ function startLessonQuiz(): void {
 
 function startExam(): void {
   if (examModule.value) store.startExam(examModule.value.id)
+}
+
+function useSolution(): void {
+  if (lesson.value) practiceDraft.value = lesson.value.practice.solution
 }
 </script>
 
@@ -108,25 +115,25 @@ function startExam(): void {
             </div>
 
             <div
-              v-if="usesSandbox"
+              v-if="changesData"
               class="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4"
-              data-testid="sandbox-banner"
+              data-testid="changes-data-banner"
             >
-              <p class="text-sm font-semibold text-amber-900">This module writes to the practice sandbox</p>
+              <p class="text-sm font-semibold text-amber-900">This module changes data</p>
               <p class="mt-1 text-sm text-amber-900">
-                Statements here run against practice.sqlite, a private copy of your session database. The imported
-                Olist data stays read-only, and you can start over whenever you want.
+                Statements here really do modify practice.sqlite, the working copy this session runs on. The
+                imported dataset is kept aside untouched, so Reset database rebuilds everything from it.
               </p>
               <div class="mt-3 flex items-center gap-3">
                 <button
                   class="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
-                  data-testid="reset-sandbox"
-                  :disabled="sandboxBusy"
-                  @click="store.resetSandbox"
+                  data-testid="reset-database-lesson"
+                  :disabled="resetBusy"
+                  @click="store.resetDatabase"
                 >
-                  {{ sandboxBusy ? 'Resetting...' : 'Reset sandbox' }}
+                  {{ resetBusy ? 'Resetting...' : 'Reset database' }}
                 </button>
-                <span v-if="sandboxNotice" class="text-sm text-amber-900">{{ sandboxNotice }}</span>
+                <span v-if="resetNotice" class="text-sm text-amber-900">{{ resetNotice }}</span>
               </div>
             </div>
 
@@ -155,7 +162,7 @@ function startExam(): void {
                   :title="block.title"
                   :explanation="block.explanation"
                   :breakdown="block.breakdown"
-                  :use-sandbox="usesSandbox"
+                  :writes-data="changesData"
                 />
               </template>
             </div>
@@ -179,13 +186,34 @@ function startExam(): void {
                 </button>
               </div>
               <p v-if="showHint" class="mt-3 text-sm text-stone-700">{{ lesson.practice.hint }}</p>
-              <div v-if="showSolution" class="mt-4">
-                <SqlBlock
-                  :run-key="`${lesson.id}-practice`"
-                  :sql="lesson.practice.solution"
-                  title="One possible solution"
-                  :use-sandbox="usesSandbox"
-                />
+              <SqlBlock
+                v-model="practiceDraft"
+                class="mt-4"
+                :run-key="`${lesson.id}-practice`"
+                sql=""
+                title="Your query"
+                :writes-data="changesData"
+                reset-label="Clear query"
+              />
+              <div
+                v-if="showSolution"
+                class="mt-4 rounded-lg border border-stone-300 bg-stone-50"
+                data-testid="practice-solution"
+              >
+                <div class="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2.5">
+                  <h5 class="text-sm font-semibold">One possible solution</h5>
+                  <button
+                    class="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-stone-100"
+                    data-testid="use-practice-solution"
+                    type="button"
+                    @click="useSolution"
+                  >
+                    Use in editor
+                  </button>
+                </div>
+                <pre
+                  class="overflow-x-auto whitespace-pre-wrap p-4 font-mono text-[13px] leading-relaxed"
+                ><code>{{ lesson.practice.solution }}</code></pre>
               </div>
             </section>
 

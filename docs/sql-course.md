@@ -46,9 +46,9 @@ Bring the Olist tables together with INNER JOIN and LEFT JOIN, follow the keys t
 
 ## Module 4 - Changing data safely (Intermediate)
 
-Create your own tables and change rows with INSERT, UPDATE and DELETE inside a writable practice sandbox, then wrap risky edits in transactions so a mistake can be undone. Runs against `practice.sqlite`, not the imported session database.
+Create your own tables and change rows with INSERT, UPDATE and DELETE in your session working copy, then wrap risky edits in transactions so a mistake can be undone. Like the rest of the app it runs against `practice.sqlite`, which `Reset database` rebuilds from the untouched import.
 
-- **Lesson 1 - The practice sandbox and CREATE TABLE** - Understand where your changes go and create your first table with typed columns and constraints.
+- **Lesson 1 - Your working copy and CREATE TABLE** - Understand where your changes go and create your first table with typed columns and constraints.
 - **Lesson 2 - INSERT: adding rows** - Add rows to your own table by typing values and by copying rows out of the Olist tables.
 - **Lesson 3 - UPDATE: changing existing rows** - Change column values in the rows you choose, and understand why the WHERE clause is the most important part of the statement.
 - **Lesson 4 - DELETE: removing rows** - Remove exactly the rows you mean to remove, and tell the difference between emptying a table and dropping it.

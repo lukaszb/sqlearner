@@ -224,8 +224,8 @@ function cancelEditingSessionName(): void {
 
         <div class="border-t border-stone-200 px-5 py-4">
           <div class="text-sm font-semibold">SQLearner</div>
-          <div class="mt-1 truncate text-xs text-stone-500" :title="activeSession.databasePath">
-            {{ activeSession.databasePath }}
+          <div class="mt-1 truncate text-xs text-stone-500" :title="activeSession.workingDatabasePath">
+            {{ activeSession.workingDatabasePath }}
           </div>
         </div>
       </aside>

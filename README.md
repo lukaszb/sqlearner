@@ -26,8 +26,9 @@ module into individual lessons; hovering a lesson shows its full title in a tool
 - Lessons can be taken in any order, and progress is stored per session in `lesson-progress.json` inside the session
   folder.
 
-The `Changing data` module runs against `practice.sqlite`, a writable copy of the session database created on demand.
-The imported Olist database stays read-only and `Reset sandbox` restores the copy.
+The table browser, the query tabs and the lessons all run against `practice.sqlite`, a writable working copy created
+during setup. Write statements are allowed everywhere, and the database produced by the CSV import is kept aside
+untouched, so `Reset database` in the Database view rebuilds the working copy from it at any time.
 
 ## Kaggle Dataset
 

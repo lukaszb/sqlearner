@@ -4,6 +4,7 @@ import type { CourseProgress, ProgressUpdate, QueryResult, SessionSummary, Table
 declare global {
   interface Window {
     deleteSessionCalled?: boolean
+    resetDatabaseCalled?: boolean
     sqlearner: {
       listSessions: () => Promise<SessionSummary[]>
       prepareDatabase: () => Promise<SessionSummary>
@@ -13,8 +14,7 @@ declare global {
       listTables: () => Promise<TableSummary[]>
       previewTable: (_sessionId: string, tableName: string) => Promise<TablePreview>
       runQuery: () => Promise<QueryResult>
-      runLessonQuery: () => Promise<QueryResult>
-      resetSandbox: () => Promise<void>
+      resetDatabase: () => Promise<void>
       loadLessonProgress: () => Promise<CourseProgress>
       saveLessonProgress: (_sessionId: string, progress: CourseProgress) => Promise<CourseProgress>
       onProgress: (_callback: (update: ProgressUpdate) => void) => () => void
@@ -25,11 +25,13 @@ declare global {
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.deleteSessionCalled = false
+    window.resetDatabaseCalled = false
     const session: SessionSummary = {
       id: 'session-e2e',
       name: 'SQLearner E2E',
       folderPath: '/tmp/sqlearner/session-e2e',
       databasePath: '/tmp/sqlearner/session-e2e/olist.sqlite',
+      workingDatabasePath: '/tmp/sqlearner/session-e2e/practice.sqlite',
       createdAt: '2026-08-29T00:00:00.000Z',
       lastUsedAt: '2026-08-29T00:00:00.000Z',
       status: 'ready'
@@ -65,12 +67,9 @@ test.beforeEach(async ({ page }) => {
         rows: [{ customer_id: 'c_001', city: 'sao paulo' }],
         elapsedMs: 4
       }),
-      runLessonQuery: async () => ({
-        columns: ['customer_id', 'city'],
-        rows: [{ customer_id: 'c_001', city: 'sao paulo' }],
-        elapsedMs: 4
-      }),
-      resetSandbox: async () => undefined,
+      resetDatabase: async () => {
+        window.resetDatabaseCalled = true
+      },
       loadLessonProgress: async () => ({ lessons: {}, exams: {} }),
       saveLessonProgress: async (_sessionId: string, progress: CourseProgress) => progress,
       onProgress: () => () => undefined
@@ -222,7 +221,7 @@ test('includes a runnable query in every four-question lesson quiz', async ({ pa
   expect(revealedHint).toBe(true)
 })
 
-test('opens a lesson from the Lessons sidebar and runs its example', async ({ page }) => {
+test('opens a lesson and lets the user practice before revealing the solution', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('session-card').click()
 
@@ -236,6 +235,20 @@ test('opens a lesson from the Lessons sidebar and runs its example', async ({ pa
 
   await firstLesson.click()
   await expect(page.getByTestId('lesson-title')).toContainText('Lesson 1')
+
+  const practice = page.getByTestId('lesson-practice')
+  const practiceEditor = practice.getByTestId('sql-block-editor')
+  await expect(practiceEditor).toBeVisible()
+  await expect(practiceEditor).toHaveValue('')
+  await practiceEditor.fill('SELECT 1 AS practice;')
+  await practice.getByTestId('run-sql-block').click()
+  await expect(practice.getByTestId('sql-block-result')).toBeVisible()
+
+  await page.getByTestId('show-solution').click()
+  await expect(page.getByTestId('practice-solution')).toBeVisible()
+  await expect(practiceEditor).toHaveValue('SELECT 1 AS practice;')
+  await page.getByTestId('use-practice-solution').click()
+  await expect(practiceEditor).toHaveValue("SELECT name, type\nFROM pragma_table_info('order_items');")
 
   await page.getByTestId('run-sql-block').first().click()
   await expect(page.getByTestId('sql-block-result').first()).toContainText('sao paulo')
@@ -273,4 +286,18 @@ test('jumps straight to a module exam without finishing the lessons', async ({ p
   await expect(page.getByTestId('exam-detail')).toBeVisible()
   await page.getByTestId('start-module-exam').click()
   await expect(page.getByTestId('quiz-counter')).toContainText('of 14')
+})
+
+test('rebuilds the working copy from the database view', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByTestId('session-card').click()
+  await expect(page.getByTestId('database-view')).toBeVisible()
+
+  await page.getByTestId('reset-database').click()
+  await expect(page.getByTestId('reset-database-confirm')).toBeVisible()
+  await page.getByTestId('reset-database-confirm-button').click()
+
+  await expect(page.getByTestId('reset-database-notice')).toBeVisible()
+  expect(await page.evaluate(() => window.resetDatabaseCalled)).toBe(true)
 })

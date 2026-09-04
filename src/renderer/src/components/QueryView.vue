@@ -22,7 +22,8 @@ function runQueryWithShortcut(event: KeyboardEvent): void {
     <header class="border-b border-stone-300 bg-panel px-6 py-4">
       <h2 class="text-2xl font-semibold">Queries</h2>
       <p class="text-sm text-stone-600">
-        Write SQL in the editor and run it against the active session database.
+        Write SQL in the editor and run it against this session's working copy. INSERT, UPDATE, DELETE and DDL are
+        allowed - use Reset database in the Database view to restore the imported data.
       </p>
     </header>
 

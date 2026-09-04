@@ -5,32 +5,32 @@ export const modifyingModule: CourseModule = {
   level: 'intermediate',
   title: 'Changing data safely',
   description:
-    'Create your own tables and change rows with INSERT, UPDATE and DELETE inside a writable practice sandbox, then wrap risky edits in transactions so a mistake can be undone.',
-  usesSandbox: true,
+    'Create your own tables and change rows with INSERT, UPDATE and DELETE in your session working copy, then wrap risky edits in transactions so a mistake can be undone.',
+  changesData: true,
   lessons: [
     {
       id: 'modifying-sandbox',
-      title: 'Lesson 1 - The practice sandbox and CREATE TABLE',
+      title: 'Lesson 1 - Your working copy and CREATE TABLE',
       goal: 'Understand where your changes go and create your first table with typed columns and constraints.',
       tables: ['orders'],
       blocks: [
         {
           kind: 'text',
-          text: 'Every lesson so far only read data. From here on you will change data, so this module runs against a separate writable database called practice.sqlite. The app creates it automatically as a full copy of your read-only session database, which means every Olist table is there with the same rows.'
+          text: 'Every lesson so far only read data. From here on you will change data, and those changes are real. Everything in SQLearner - the table browser, the Queries tab and these lessons - runs against practice.sqlite, a writable working copy that the app builds during setup. The database created by the CSV import is kept aside untouched and is never queried; it exists only so the working copy can be rebuilt from it.'
         },
         {
           kind: 'note',
-          text: 'Nothing you do here can damage the real session data. The lesson screen has a Reset sandbox button that deletes practice.sqlite and rebuilds it from the read-only session database, so any table you create, any row you change and any mistake you make is undone by one click.'
+          text: 'Nothing you do here can be lost for good. The Database view has a Reset database button, repeated in the banner at the top of this lesson, that deletes the working copy and rebuilds it from the untouched import. Any table you create, any row you change and any mistake you make is undone by one click.'
         },
         {
           kind: 'sql',
-          title: 'Confirm the sandbox is a real copy',
+          title: 'Confirm the working copy holds the imported data',
           sql: 'SELECT COUNT(*) AS order_rows\nFROM orders;',
-          explanation: 'The imported Olist tables exist in the sandbox exactly as they do in the session database.',
+          explanation: 'The working copy carries every Olist table with exactly the rows the import produced.',
           breakdown: [
             { part: 'SELECT COUNT(*)', meaning: 'Count every row the query produces instead of returning the rows themselves.' },
             { part: 'AS order_rows', meaning: 'Name the single result column so the output is readable.' },
-            { part: 'FROM orders', meaning: 'Read from the sandbox copy of the orders table.' }
+            { part: 'FROM orders', meaning: 'Read from the orders table in your working copy.' }
           ]
         },
         {
@@ -40,7 +40,7 @@ export const modifyingModule: CourseModule = {
             'Never INSERT, UPDATE or DELETE directly in the imported Olist tables; they are your reference data.',
             'Build your own working tables with a my_ prefix, for example my_products and my_orders.',
             'Run a SELECT after every change to check that the change did what you expected.',
-            'If anything goes wrong, press Reset sandbox and start the lesson again.'
+            'If anything goes wrong, press Reset database and start the lesson again.'
           ]
         },
         {
@@ -94,24 +94,24 @@ export const modifyingModule: CourseModule = {
           id: 'modifying-sandbox-q1',
           prompt: 'Where do the changes you make in this module actually go?',
           options: [
-            'Into practice.sqlite, a writable copy of the session database',
-            'Into the read-only session database',
+            'Into practice.sqlite, the working copy the whole app runs on',
+            'Into the untouched database left behind by the CSV import',
             'Into the original Olist CSV files',
             'Nowhere; write statements are simulated'
           ],
-          answer: 'Into practice.sqlite, a writable copy of the session database',
-          explanation: 'The sandbox is a separate copy, so experiments never touch the real session data.'
+          answer: 'Into practice.sqlite, the working copy the whole app runs on',
+          explanation: 'Writes land in the working copy, so the database built by the import stays exactly as it was.'
         },
         {
           id: 'modifying-sandbox-q2',
-          prompt: 'You created five tables and deleted rows you should have kept. What does the Reset sandbox button do?',
+          prompt: 'You created five tables and deleted rows you should have kept. What does the Reset database button do?',
           options: [
-            'Rebuilds practice.sqlite from the read-only session database, undoing everything',
+            'Rebuilds the working copy from the untouched import, undoing everything',
             'Undoes only the last statement you ran',
-            'Deletes the session database and re-imports the CSV files',
+            'Downloads the Kaggle dataset and imports the CSV files again',
             'Reverses your DELETE statements but keeps the tables you created'
           ],
-          answer: 'Rebuilds practice.sqlite from the read-only session database, undoing everything',
+          answer: 'Rebuilds the working copy from the untouched import, undoing everything',
           explanation: 'Reset throws the whole copy away and makes a fresh one, so every change is gone.'
         },
         {
@@ -141,15 +141,15 @@ export const modifyingModule: CourseModule = {
         },
         {
           id: 'modifying-sandbox-q5',
-          prompt: 'What is the risk of running UPDATE orders SET order_status = ? in this sandbox?',
+          prompt: 'What is the risk of running UPDATE orders SET order_status = ? in your working copy?',
           options: [
             'It changes your reference data, so later lessons read wrong values until you reset',
-            'It corrupts the read-only session database',
+            'It corrupts the untouched import',
             'It is blocked by SQLite because orders is imported',
             'Nothing at all, orders is protected'
           ],
           answer: 'It changes your reference data, so later lessons read wrong values until you reset',
-          explanation: 'The sandbox copy is fully writable, so the Olist tables can be damaged there; that is why you work in my_ tables.'
+          explanation: 'The working copy is fully writable, so the Olist tables can be damaged there; that is why you work in my_ tables.'
         },
         {
           id: 'modifying-sandbox-q6',
@@ -354,7 +354,7 @@ export const modifyingModule: CourseModule = {
         },
         {
           kind: 'note',
-          text: 'UPDATE my_products SET price = 0; is valid SQL and changes every row in the table. SQLite does not warn you and there is no confirmation prompt. The two defences are the WHERE clause and, when the edit is risky, a transaction as shown in Lesson 6. In this module there is a third: press Reset sandbox.'
+          text: 'UPDATE my_products SET price = 0; is valid SQL and changes every row in the table. SQLite does not warn you and there is no confirmation prompt. The two defences are the WHERE clause and, when the edit is risky, a transaction as shown in Lesson 6. Here you have a third: press Reset database.'
         },
         {
           kind: 'sql',
@@ -579,15 +579,15 @@ export const modifyingModule: CourseModule = {
         },
         {
           id: 'modifying-delete-q6',
-          prompt: 'You ran DELETE FROM my_products; by accident in the sandbox. What is the quickest full recovery?',
+          prompt: 'You ran DELETE FROM my_products; by accident. What is the quickest full recovery?',
           options: [
-            'Press Reset sandbox to rebuild practice.sqlite from the session database',
+            'Press Reset database to rebuild the working copy from the untouched import',
             'Run an UNDO statement',
             'Run the DELETE again to reverse it',
-            'Nothing can be done, the session database is lost'
+            'Nothing can be done, the imported data is lost'
           ],
-          answer: 'Press Reset sandbox to rebuild practice.sqlite from the session database',
-          explanation: 'The sandbox is disposable by design; the read-only session database was never touched.'
+          answer: 'Press Reset database to rebuild the working copy from the untouched import',
+          explanation: 'The working copy is disposable by design; the database built by the import was never touched.'
         }
       ]
     },
@@ -754,7 +754,7 @@ export const modifyingModule: CourseModule = {
       blocks: [
         {
           kind: 'text',
-          text: 'A transaction groups several statements into one unit of work. Nothing inside it is permanent until you say COMMIT, and ROLLBACK throws the whole group away as if it never ran. This is the professional version of the Reset sandbox button: it works on a real database, and it protects one specific change instead of the entire copy.'
+          text: 'A transaction groups several statements into one unit of work. Nothing inside it is permanent until you say COMMIT, and ROLLBACK throws the whole group away as if it never ran. This is the professional version of the Reset database button: it works on a real database, and it protects one specific change instead of throwing the entire copy away.'
         },
         {
           kind: 'sql',

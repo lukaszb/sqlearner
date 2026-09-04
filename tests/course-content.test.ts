@@ -22,9 +22,9 @@ describe('course structure', () => {
     ])
   })
 
-  it('marks the data changing module as sandboxed and the others as read only', () => {
-    expect(findModule('modifying')?.usesSandbox).toBe(true)
-    expect(course.filter((module) => module.usesSandbox).map((module) => module.id)).toEqual(['modifying'])
+  it('marks the data changing module as the only one that writes to the database', () => {
+    expect(findModule('modifying')?.changesData).toBe(true)
+    expect(course.filter((module) => module.changesData).map((module) => module.id)).toEqual(['modifying'])
   })
 
   it('uses unique lesson ids that can be looked up', () => {

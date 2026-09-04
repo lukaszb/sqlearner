@@ -6,9 +6,8 @@ export const ipcChannels = {
   sessionsDelete: 'sessions:delete',
   databaseTables: 'database:tables',
   databasePreview: 'database:preview',
+  databaseReset: 'database:reset',
   queryRun: 'query:run',
-  lessonsRun: 'lessons:run',
-  lessonsSandboxReset: 'lessons:sandbox-reset',
   lessonsProgressGet: 'lessons:progress-get',
   lessonsProgressSet: 'lessons:progress-set',
   progress: 'progress:update'

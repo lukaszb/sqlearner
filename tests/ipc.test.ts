@@ -7,5 +7,6 @@ describe('ipcChannels', () => {
     expect(ipcChannels.sessionsRename).toBe('sessions:rename')
     expect(ipcChannels.databasePreview).toBe('database:preview')
     expect(ipcChannels.queryRun).toBe('query:run')
+    expect(ipcChannels.databaseReset).toBe('database:reset')
   })
 })

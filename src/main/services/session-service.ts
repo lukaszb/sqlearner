@@ -5,6 +5,14 @@ import type { SessionSummary } from '@/shared/types.js'
 
 const manifestName = 'session.json'
 
+export const workingDatabaseFileName = 'practice.sqlite'
+
+/** Older sessions were stored without a working copy path, so derive it from the folder. */
+function withWorkingDatabasePath(session: SessionSummary, folderPath: string): SessionSummary {
+  if (session.workingDatabasePath) return session
+  return { ...session, workingDatabasePath: path.join(folderPath, workingDatabaseFileName) }
+}
+
 export function getSessionsRoot(): string {
   return path.join(app.getPath('userData'), 'sessions')
 }
@@ -26,7 +34,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
         const manifestPath = path.join(root, entry.name, manifestName)
         try {
           const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as SessionSummary
-          return parsed
+          return withWorkingDatabasePath(parsed, path.join(root, entry.name))
         } catch {
           return undefined
         }
@@ -50,6 +58,7 @@ export async function createPreparingSession(): Promise<SessionSummary> {
     name: `SQLearner ${new Date().toLocaleString()}`,
     folderPath,
     databasePath: path.join(folderPath, 'olist.sqlite'),
+    workingDatabasePath: path.join(folderPath, workingDatabaseFileName),
     createdAt: now,
     lastUsedAt: now,
     status: 'preparing'

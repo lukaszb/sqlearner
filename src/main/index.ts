@@ -5,10 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { ipcChannels } from '@/shared/ipc.js'
 import type { SessionSummary } from '@/shared/types.js'
 import { deleteSession, listSessions, openSessionFolder, renameSession } from './services/session-service.js'
-import { listTables, prepareDatabase, previewTable, resetSandbox, runLessonQuery, runQuery } from './services/database-service.js'
+import { listTables, prepareDatabase, previewTable, resetWorkingDatabase, runQuery } from './services/database-service.js'
 import { loadProgress, saveProgress } from './services/lesson-service.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const applicationName = 'SQLearner'
+
+app.setName(applicationName)
 
 let mainWindow: BrowserWindow | undefined
 
@@ -37,7 +40,7 @@ async function createWindow(): Promise<void> {
     height: 820,
     minWidth: 980,
     minHeight: 640,
-    title: 'SQLearner',
+    title: applicationName,
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
@@ -75,13 +78,9 @@ function registerIpc(): void {
     const session = findSessionOrThrow(await listSessions(), sessionId)
     return runQuery(session, sql)
   })
-  ipcMain.handle(ipcChannels.lessonsRun, async (_event, sessionId: string, sql: string, useSandbox: boolean) => {
+  ipcMain.handle(ipcChannels.databaseReset, async (_event, sessionId: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
-    return runLessonQuery(session, sql, Boolean(useSandbox))
-  })
-  ipcMain.handle(ipcChannels.lessonsSandboxReset, async (_event, sessionId: string) => {
-    const session = findSessionOrThrow(await listSessions(), sessionId)
-    await resetSandbox(session)
+    await resetWorkingDatabase(session)
   })
   ipcMain.handle(ipcChannels.lessonsProgressGet, async (_event, sessionId: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)

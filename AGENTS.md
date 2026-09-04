@@ -34,7 +34,7 @@ On later launches, show sessions sorted by most recently used. Support opening f
 
 The sidebar has `Database`, `Queries` and `Lessons`. `Database` displays tables and previews. `Queries` uses browser-like tabs where users write SQL, run it, and inspect results. `Lessons` nests modules and, under them, individual lessons; hovering a lesson shows its full title in a tooltip on the right.
 
-Course content lives in `src/shared/course/`: one file per module in `modules/`, the shared model in `types.ts`, and the drawing rules in `quiz.ts`. Lessons draw three random questions from their own bank and only count as completed after a flawless run; module exams draw at least ten questions with at least two per lesson. Progress is stored per session in `lesson-progress.json`. Lessons that change data run against `practice.sqlite`, a writable copy of the session database that `Reset sandbox` restores.
+Course content lives in `src/shared/course/`: one file per module in `modules/`, the shared model in `types.ts`, and the drawing rules in `quiz.ts`. Lessons draw three random questions from their own bank and only count as completed after a flawless run; module exams draw at least ten questions with at least two per lesson. Progress is stored per session in `lesson-progress.json`. Every query in the app - table previews, query tabs and lessons - runs against `practice.sqlite`, a writable copy created during setup; `olist.sqlite` keeps the untouched import and `Reset database` rebuilds the copy from it.
 
 ## Coding Style & Naming Conventions
 

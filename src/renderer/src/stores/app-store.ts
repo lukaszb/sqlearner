@@ -16,6 +16,10 @@ interface AppState {
   loading: boolean
   databaseLoading: boolean
   databaseError?: string
+  resetBusy: boolean
+  resetNotice?: string
+  /** Set when a statement changed data, so the table list is reloaded on the next visit. */
+  tablesStale: boolean
   electronReady: boolean
   error?: string
 }
@@ -44,6 +48,9 @@ export const useAppStore = defineStore('app', {
     loading: false,
     databaseLoading: false,
     databaseError: undefined,
+    resetBusy: false,
+    resetNotice: undefined,
+    tablesStale: false,
     electronReady: Boolean(window.sqlearner),
     error: undefined
   }),
@@ -110,6 +117,29 @@ export const useAppStore = defineStore('app', {
       this.selectedTable = undefined
       this.tablePreview = undefined
       this.databaseError = undefined
+      this.resetNotice = undefined
+    },
+    /** Rebuilds the writable working copy from the untouched import. */
+    async resetDatabase() {
+      if (!this.activeSessionId || !window.sqlearner?.resetDatabase) return false
+      this.resetBusy = true
+      this.resetNotice = undefined
+      this.error = undefined
+      try {
+        await window.sqlearner.resetDatabase(this.activeSessionId)
+        this.queryTabs.forEach((tab) => {
+          tab.result = undefined
+          tab.error = undefined
+        })
+        await this.loadTables()
+        this.resetNotice = 'Database restored to the state it had right after the import.'
+        return true
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : 'Failed to reset the database'
+        return false
+      } finally {
+        this.resetBusy = false
+      }
     },
     async renameActiveSession(name: string) {
       if (!this.activeSessionId || !window.sqlearner) return false
@@ -129,7 +159,7 @@ export const useAppStore = defineStore('app', {
       if (view === 'queries' && this.queryTabs.length === 0) {
         this.addQueryTab()
       }
-      if (view === 'database' && this.activeSessionId && this.tables.length === 0) {
+      if (view === 'database' && this.activeSessionId && (this.tables.length === 0 || this.tablesStale)) {
         await this.loadTables()
       }
     },
@@ -160,6 +190,7 @@ export const useAppStore = defineStore('app', {
       try {
         const nextTables = await window.sqlearner.listTables(this.activeSessionId)
         this.tables = nextTables
+        this.tablesStale = false
         if (nextTables[0]) {
           const tableName = previousSelectedTable && nextTables.some((table) => table.name === previousSelectedTable)
             ? previousSelectedTable
@@ -193,6 +224,11 @@ export const useAppStore = defineStore('app', {
         this.databaseLoading = false
       }
     },
+    /** A statement changed the working copy, so the cached table list no longer matches it. */
+    markTablesStale() {
+      this.tablesStale = true
+      if (this.activeView === 'database') void this.loadTables()
+    },
     addQueryTab() {
       const tab = createQueryTab(this.queryTabs.length + 1)
       this.queryTabs.push(tab)
@@ -208,7 +244,9 @@ export const useAppStore = defineStore('app', {
       if (!this.activeSessionId || !tab || !window.sqlearner) return
       tab.error = undefined
       try {
-        tab.result = await window.sqlearner.runQuery(this.activeSessionId, tab.sql) as QueryResult
+        const result = await window.sqlearner.runQuery(this.activeSessionId, tab.sql) as QueryResult
+        tab.result = result
+        if (result.changes !== undefined) this.markTablesStale()
       } catch (error) {
         tab.error = error instanceof Error ? error.message : 'Query failed'
       }

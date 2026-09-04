@@ -8,7 +8,7 @@ import { parse } from 'csv-parse/sync'
 import { ipcChannels } from '@/shared/ipc.js'
 import { splitSqlStatements } from '@/shared/sql-statements.js'
 import type { ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types.js'
-import { createPreparingSession, markSessionUsed, saveSession } from './session-service.js'
+import { createPreparingSession, markSessionUsed, saveSession, workingDatabaseFileName } from './session-service.js'
 
 const kaggleDatasetHandle = 'olistbr/brazilian-ecommerce'
 const kaggleDatasetUrl = `https://www.kaggle.com/api/v1/datasets/download/${kaggleDatasetHandle}`
@@ -198,6 +198,8 @@ export async function prepareDatabase(window: BrowserWindow): Promise<SessionSum
     sendProgress(window, { sessionId: session.id, label: 'Importing CSV files into SQLite', percent: 45 })
     await importKaggleDirectory(datasetPath, session.databasePath, window, session.id)
     await rm(datasetPath, { recursive: true, force: true })
+    sendProgress(window, { sessionId: session.id, label: 'Creating the writable working copy', percent: 92 })
+    await resetWorkingDatabase(session)
   } catch (error) {
     await rm(session.folderPath, { recursive: true, force: true })
     const message = error instanceof Error ? error.message : 'Unknown Kaggle download error'
@@ -221,16 +223,51 @@ export function getTableColumns(db: Database.Database, tableName: string): strin
   return columns.map((column) => column.name)
 }
 
-function openSessionDatabase(session: SessionSummary): Database.Database {
+/** Path of the writable copy every table preview, query and lesson runs against. */
+export function getWorkingDatabasePath(session: SessionSummary): string {
+  return path.join(session.folderPath, workingDatabaseFileName)
+}
+
+async function copyImportedDatabase(session: SessionSummary): Promise<string> {
   if (!existsSync(session.databasePath)) {
     throw new Error(`Database file is missing: ${session.databasePath}`)
   }
 
-  return new Database(session.databasePath, { readonly: true })
+  const workingPath = getWorkingDatabasePath(session)
+  const source = new Database(session.databasePath, { readonly: true })
+  try {
+    await source.backup(workingPath)
+  } finally {
+    source.close()
+  }
+
+  return workingPath
+}
+
+/** Creates the working copy on demand, for sessions prepared before it existed. */
+export async function ensureWorkingDatabase(session: SessionSummary): Promise<string> {
+  const workingPath = getWorkingDatabasePath(session)
+  if (existsSync(workingPath)) return workingPath
+  return copyImportedDatabase(session)
+}
+
+/** Throws the working copy away and rebuilds it from the untouched import. */
+export async function resetWorkingDatabase(session: SessionSummary): Promise<string> {
+  const workingPath = getWorkingDatabasePath(session)
+  await Promise.all([
+    rm(workingPath, { force: true }),
+    rm(`${workingPath}-wal`, { force: true }),
+    rm(`${workingPath}-shm`, { force: true })
+  ])
+  return copyImportedDatabase(session)
+}
+
+async function openWorkingDatabase(session: SessionSummary): Promise<Database.Database> {
+  return new Database(await ensureWorkingDatabase(session))
 }
 
 export async function listTables(session: SessionSummary): Promise<TableSummary[]> {
-  const db = openSessionDatabase(await markSessionUsed(session))
+  const db = await openWorkingDatabase(await markSessionUsed(session))
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]
   const result = tables.map((table) => ({
     name: table.name,
@@ -242,11 +279,11 @@ export async function listTables(session: SessionSummary): Promise<TableSummary[
 }
 
 export async function getDatabaseSize(session: SessionSummary): Promise<number> {
-  return (await stat(session.databasePath)).size
+  return (await stat(await ensureWorkingDatabase(session))).size
 }
 
 export async function previewTable(session: SessionSummary, tableName: string): Promise<TablePreview> {
-  const db = openSessionDatabase(await markSessionUsed(session))
+  const db = await openWorkingDatabase(await markSessionUsed(session))
   const rows = db.prepare(`SELECT * FROM ${quoteIdentifier(tableName)} LIMIT 100`).all() as Record<string, unknown>[]
   const columns = getTableColumns(db, tableName)
   db.close()
@@ -291,64 +328,7 @@ export function executeSql(db: Database.Database, sql: string): QueryResult {
 }
 
 export async function runQuery(session: SessionSummary, sql: string): Promise<QueryResult> {
-  const db = openSessionDatabase(await markSessionUsed(session))
-  try {
-    return executeSql(db, sql)
-  } finally {
-    db.close()
-  }
-}
-
-export function getSandboxPath(session: SessionSummary): string {
-  return path.join(session.folderPath, 'practice.sqlite')
-}
-
-async function createSandbox(session: SessionSummary): Promise<string> {
-  const sandboxPath = getSandboxPath(session)
-  if (!existsSync(session.databasePath)) {
-    throw new Error(`Database file is missing: ${session.databasePath}`)
-  }
-
-  const source = new Database(session.databasePath, { readonly: true })
-  try {
-    await source.backup(sandboxPath)
-  } finally {
-    source.close()
-  }
-
-  return sandboxPath
-}
-
-/** The writable copy used by the lessons that change data. */
-export async function ensureSandbox(session: SessionSummary): Promise<string> {
-  const sandboxPath = getSandboxPath(session)
-  if (existsSync(sandboxPath)) return sandboxPath
-  return createSandbox(session)
-}
-
-export async function resetSandbox(session: SessionSummary): Promise<string> {
-  const sandboxPath = getSandboxPath(session)
-  await Promise.all([
-    rm(sandboxPath, { force: true }),
-    rm(`${sandboxPath}-wal`, { force: true }),
-    rm(`${sandboxPath}-shm`, { force: true })
-  ])
-  return createSandbox(session)
-}
-
-/**
- * Runs a lesson statement. Read-only lessons use the session database, lessons
- * that change data use the practice sandbox so the imported dataset stays intact.
- */
-export async function runLessonQuery(
-  session: SessionSummary,
-  sql: string,
-  useSandbox: boolean
-): Promise<QueryResult> {
-  const usedSession = await markSessionUsed(session)
-  if (!useSandbox) return runQuery(usedSession, sql)
-
-  const db = new Database(await ensureSandbox(usedSession))
+  const db = await openWorkingDatabase(await markSessionUsed(session))
   try {
     return executeSql(db, sql)
   } finally {

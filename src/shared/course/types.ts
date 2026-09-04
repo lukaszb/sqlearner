@@ -62,8 +62,8 @@ export interface CourseModule {
   level: ModuleLevel
   title: string
   description: string
-  /** Modules that change data run against the writable practice sandbox. */
-  usesSandbox?: boolean
+  /** Marks modules whose statements change data, so the lesson screen can warn about it. */
+  changesData?: boolean
   lessons: Lesson[]
 }
 
