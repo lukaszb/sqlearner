@@ -146,6 +146,13 @@ mac_asars=(release/mac*/SQLearner.app/Contents/Resources/app.asar)
 [ "${#mac_asars[@]}" -eq 1 ] && [ -f "${mac_asars[0]}" ] ||
   fail "expected exactly one packaged macOS app.asar"
 node scripts/verify-asar.mjs "${mac_asars[0]}"
+mac_app="${mac_asars[0]%/Contents/Resources/app.asar}"
+codesign --verify --deep --strict --verbose=2 "$mac_app" ||
+  fail "macOS app does not have a valid code signature"
+spctl --assess --type execute --verbose=2 "$mac_app" ||
+  fail "Gatekeeper rejected the macOS app"
+xcrun stapler validate "$mac_app" ||
+  fail "macOS app does not contain a valid notarization ticket"
 
 step "Creating release $tag"
 payload="$(NOTES_FILE="$notes_file" TAG="$tag" COMMIT="$commit" VERSION="$version" node -e '

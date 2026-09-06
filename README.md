@@ -51,13 +51,32 @@ Build binaries:
 
 ```bash
 npm run build:mac
+npm run build:mac:release
 npm run build:win
 npm run build:win:portable
 ```
 
-`npm run build:win` creates a standalone Windows x64 `.exe` in `release/`; it does not require installation. `npm run build:mac` creates a ZIP containing a standalone `.app` for the current Mac architecture. After extracting the ZIP, the app can be launched or moved anywhere. `npm run build:release` builds both artifacts in one pass and must run on macOS. `build:win:portable` remains as an alias for `build:win`.
+`npm run build:win` creates a standalone Windows x64 `.exe` in `release/`; it does not require installation. `npm run build:mac` creates an ad-hoc-signed ZIP for local testing on the Mac that built it. Hardened Runtime is disabled for this local build because Electron contains native libraries signed by another team. `build:win:portable` remains as an alias for `build:win`.
 
-Electron Builder uses an available Apple Developer identity automatically. Without signing and notarization credentials the Mac app is still built, but Gatekeeper may warn or block it on other Macs. A public release should be signed with an Apple Developer ID and notarized; the Windows portable executable likewise remains unsigned unless a Windows certificate is configured. Cross-building Windows from an Apple Silicon Mac may also require Wine.
+`npm run build:mac:release` is the distributable macOS build. It requires a `Developer ID Application` certificate and Apple notarization credentials, enables Hardened Runtime, and fails instead of silently producing an unsigned ZIP. `npm run build:release` does the same after building Windows and must run on macOS. The Windows portable executable remains unsigned unless a Windows certificate is configured. Cross-building Windows from an Apple Silicon Mac may also require Wine.
+
+For a local Developer ID certificate installed in Keychain, configure notarization with one of the credential sets supported by Electron Builder:
+
+```bash
+# Recommended for CI: App Store Connect API key
+export APPLE_API_KEY=/absolute/path/to/AuthKey_ABC123.p8
+export APPLE_API_KEY_ID=ABC123
+export APPLE_API_ISSUER=00000000-0000-0000-0000-000000000000
+
+# Or an Apple ID app-specific password
+export APPLE_ID=developer@example.com
+export APPLE_APP_SPECIFIC_PASSWORD=xxxx-xxxx-xxxx-xxxx
+export APPLE_TEAM_ID=ABCDE12345
+
+npm run build:mac:release
+```
+
+Do not publish the output of `build:mac`: an ad-hoc signature is only a local-development convenience. Apps downloaded by other users must use the Developer ID and notarized release build to pass Gatekeeper.
 
 Windows packaging uses the prebuilt `better-sqlite3` binary included by the dependency. Electron Builder's native dependency rebuild is disabled because `node-gyp` cannot cross-compile a Windows x64 addon on a macOS ARM host.
 
