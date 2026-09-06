@@ -1,12 +1,25 @@
 import { expect, test } from '@playwright/test'
-import type { CourseProgress, ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types'
+import type {
+  CourseProgress,
+  ProgressUpdate,
+  QueryResult,
+  SessionSummary,
+  SessionWorkspacePatch,
+  SessionWorkspaceState,
+  TablePreview,
+  TableSummary
+} from '@/shared/types'
 
 declare global {
   interface Window {
     deleteSessionCalled?: boolean
     resetDatabaseCalled?: boolean
+    restoreLastSession?: boolean
+    restoreQuiz?: boolean
     sqlearner: {
       listSessions: () => Promise<SessionSummary[]>
+      activateSession: () => Promise<SessionSummary>
+      getLastOpenedSessionId: () => Promise<string | undefined>
       prepareDatabase: () => Promise<SessionSummary>
       renameSession: (_sessionId: string, name: string) => Promise<SessionSummary>
       openSessionFolder: () => Promise<void>
@@ -17,6 +30,8 @@ declare global {
       resetDatabase: () => Promise<void>
       loadLessonProgress: () => Promise<CourseProgress>
       saveLessonProgress: (_sessionId: string, progress: CourseProgress) => Promise<CourseProgress>
+      loadSessionWorkspace: () => Promise<SessionWorkspaceState>
+      saveSessionWorkspace: (_sessionId: string, patch: SessionWorkspacePatch) => Promise<SessionWorkspaceState>
       onProgress: (_callback: (update: ProgressUpdate) => void) => () => void
     }
   }
@@ -39,6 +54,8 @@ test.beforeEach(async ({ page }) => {
 
     window.sqlearner = {
       listSessions: async () => [session],
+      activateSession: async () => session,
+      getLastOpenedSessionId: async () => window.restoreLastSession || window.restoreQuiz ? session.id : undefined,
       prepareDatabase: async () => session,
       renameSession: async (_sessionId: string, name: string) => ({ ...session, name }),
       openSessionFolder: async () => undefined,
@@ -72,9 +89,104 @@ test.beforeEach(async ({ page }) => {
       },
       loadLessonProgress: async () => ({ lessons: {}, exams: {} }),
       saveLessonProgress: async (_sessionId: string, progress: CourseProgress) => progress,
+      loadSessionWorkspace: async (): Promise<SessionWorkspaceState> => window.restoreQuiz
+        ? {
+            activeView: 'lessons',
+            lessons: {
+              expandedModules: ['foundations'],
+              selection: { type: 'lesson', lessonId: 'foundations-tour' },
+              attempts: { 'lesson:foundations-tour': 1 },
+              practiceDrafts: {},
+              quiz: {
+                mode: 'lesson',
+                targetId: 'foundations-tour',
+                title: 'Lesson 1: Meet the Olist database',
+                index: 1,
+                furthestIndex: 1,
+                finished: false,
+                passed: false,
+                items: [
+                  {
+                    question: {
+                      id: 'restored-random-question-1',
+                      prompt: 'First randomly drawn question',
+                      options: ['A', 'B'],
+                      answer: 'A',
+                      explanation: 'A is correct.'
+                    },
+                    options: ['B', 'A'],
+                    selected: 'A',
+                    queryDraft: ''
+                  },
+                  {
+                    question: {
+                      id: 'restored-random-question-2',
+                      prompt: 'Second randomly drawn question',
+                      options: ['C', 'D'],
+                      answer: 'C',
+                      explanation: 'C is correct.'
+                    },
+                    options: ['D', 'C'],
+                    selected: 'D',
+                    queryDraft: ''
+                  }
+                ]
+              }
+            }
+          }
+        : window.restoreLastSession
+        ? {
+            activeView: 'lessons',
+            lessons: {
+              expandedModules: ['foundations'],
+              selection: { type: 'lesson', lessonId: 'foundations-tour' },
+              attempts: {},
+              practiceDrafts: { 'foundations-tour': 'SELECT 1 AS restored;' }
+            }
+          }
+        : {
+            activeView: 'database',
+            lessons: { expandedModules: [], attempts: {}, practiceDrafts: {} }
+          },
+      saveSessionWorkspace: async (_sessionId: string, patch: SessionWorkspacePatch) => ({
+        activeView: patch.activeView ?? 'database',
+        lessons: patch.lessons ?? { expandedModules: [], attempts: {}, practiceDrafts: {} }
+      }),
       onProgress: () => () => undefined
     }
   })
+})
+
+test('automatically restores the last opened session', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.restoreLastSession = true
+  })
+  await page.goto('/')
+
+  await expect(page.getByTestId('workspace-sidebar')).toBeVisible()
+  await expect(page.getByTestId('session-name-readonly')).toHaveText('SQLearner E2E')
+  await expect(page.getByTestId('lessons-view')).toBeVisible()
+  await expect(page.getByTestId('lesson-title')).toContainText('Lesson 1')
+  await expect(page.getByTestId('lesson-practice').getByTestId('sql-block-editor'))
+    .toHaveValue('SELECT 1 AS restored;')
+})
+
+test('restores the drawn quiz and answered question at the same position', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.restoreQuiz = true
+  })
+  await page.goto('/')
+
+  await expect(page.getByTestId('lessons-view')).toBeVisible()
+  await expect(page.getByTestId('quiz-counter')).toHaveText('Question 2 of 2')
+  await expect(page.getByTestId('quiz-prompt')).toHaveText('Second randomly drawn question')
+  await expect(page.getByTestId('quiz-feedback')).toContainText('Not quite')
+  await expect(page.getByTestId('quiz-next')).toBeEnabled()
+
+  await page.getByTestId('lesson-item').first().click()
+  await expect(page.getByTestId('quiz-counter')).toHaveText('Question 2 of 2')
+  await expect(page.getByTestId('quiz-prompt')).toHaveText('Second randomly drawn question')
+  await expect(page.getByTestId('quiz-feedback')).toContainText('Not quite')
 })
 
 test('keeps database tables visible after navigating to queries and back', async ({ page }) => {
@@ -219,6 +331,38 @@ test('includes a runnable query in every four-question lesson quiz', async ({ pa
 
   expect(ranQuery).toBe(true)
   expect(revealedHint).toBe(true)
+})
+
+test('allows navigation only between quiz questions already reached', async ({ page }) => {
+  await page.goto('/')
+  await page.getByTestId('session-card').click()
+  await page.getByTestId('nav-lessons').click()
+  await page.getByTestId('lesson-item').first().click()
+  await page.getByTestId('start-lesson-quiz').click()
+
+  const navigationItems = page.getByTestId('quiz-question-navigation-item')
+  await expect(navigationItems).toHaveCount(4)
+  await expect(navigationItems.nth(0)).toBeEnabled()
+  await expect(navigationItems.nth(1)).toBeDisabled()
+
+  const editor = page.getByTestId('quiz-query-editor')
+  if (await editor.isVisible()) {
+    await editor.fill('SELECT 1;')
+    await page.getByTestId('quiz-run-query').click()
+  } else {
+    await page.getByTestId('quiz-option').first().click()
+  }
+  await page.getByTestId('quiz-next').click()
+
+  await expect(page.getByTestId('quiz-counter')).toHaveText('Question 2 of 4')
+  await expect(navigationItems.nth(0)).toBeEnabled()
+  await expect(navigationItems.nth(1)).toBeEnabled()
+  await expect(navigationItems.nth(2)).toBeDisabled()
+
+  await navigationItems.nth(0).click()
+  await expect(page.getByTestId('quiz-counter')).toHaveText('Question 1 of 4')
+  await navigationItems.nth(1).click()
+  await expect(page.getByTestId('quiz-counter')).toHaveText('Question 2 of 4')
 })
 
 test('opens a lesson and lets the user practice before revealing the solution', async ({ page }) => {

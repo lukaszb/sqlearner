@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import type { ProgressUpdate, QueryResult, SessionSummary, SqlQueryTab, TablePreview, TableSummary } from '@/shared/types'
+import type { ProgressUpdate, QueryResult, SessionSummary, SqlQueryTab, TablePreview, TableSummary, WorkspaceView } from '@/shared/types'
 
-export type AppView = 'database' | 'queries' | 'lessons'
+export type AppView = WorkspaceView
 
 interface AppState {
   sessions: SessionSummary[]
@@ -71,6 +71,10 @@ export const useAppStore = defineStore('app', {
       try {
         await this.refreshSessions()
         this.activeQueryTabId = this.queryTabs[0]?.id
+        const lastOpenedSessionId = await window.sqlearner.getLastOpenedSessionId()
+        if (lastOpenedSessionId && this.sessions.some((session) => session.id === lastOpenedSessionId)) {
+          await this.selectSession(lastOpenedSessionId)
+        }
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Failed to initialize SQLearner'
       }
@@ -108,6 +112,10 @@ export const useAppStore = defineStore('app', {
       }
     },
     async selectSession(sessionId: string) {
+      if (!window.sqlearner) return
+      const updated = await window.sqlearner.activateSession(sessionId)
+      const index = this.sessions.findIndex((session) => session.id === sessionId)
+      if (index !== -1) this.sessions[index] = updated
       this.activeSessionId = sessionId
       await this.loadTables()
     },
@@ -156,6 +164,12 @@ export const useAppStore = defineStore('app', {
     },
     async selectView(view: AppView) {
       this.activeView = view
+      if (this.activeSessionId && window.sqlearner) {
+        void window.sqlearner.saveSessionWorkspace(this.activeSessionId, { activeView: view })
+          .catch((error: unknown) => {
+            this.error = error instanceof Error ? error.message : 'Failed to save workspace state'
+          })
+      }
       if (view === 'queries' && this.queryTabs.length === 0) {
         this.addQueryTab()
       }

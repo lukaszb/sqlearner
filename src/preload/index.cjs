@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 const ipcChannels = {
   sessionsList: 'sessions:list',
+  sessionsActivate: 'sessions:activate',
+  sessionsLastOpened: 'sessions:last-opened',
   sessionsPrepare: 'sessions:prepare',
   sessionsRename: 'sessions:rename',
   sessionsOpenFolder: 'sessions:open-folder',
@@ -12,11 +14,15 @@ const ipcChannels = {
   queryRun: 'query:run',
   lessonsProgressGet: 'lessons:progress-get',
   lessonsProgressSet: 'lessons:progress-set',
+  workspaceGet: 'workspace:get',
+  workspaceSet: 'workspace:set',
   progress: 'progress:update'
 }
 
 const api = {
   listSessions: () => ipcRenderer.invoke(ipcChannels.sessionsList),
+  activateSession: (sessionId) => ipcRenderer.invoke(ipcChannels.sessionsActivate, sessionId),
+  getLastOpenedSessionId: () => ipcRenderer.invoke(ipcChannels.sessionsLastOpened),
   prepareDatabase: () => ipcRenderer.invoke(ipcChannels.sessionsPrepare),
   renameSession: (sessionId, name) => ipcRenderer.invoke(ipcChannels.sessionsRename, sessionId, name),
   openSessionFolder: (sessionId) => ipcRenderer.invoke(ipcChannels.sessionsOpenFolder, sessionId),
@@ -27,6 +33,8 @@ const api = {
   resetDatabase: (sessionId) => ipcRenderer.invoke(ipcChannels.databaseReset, sessionId),
   loadLessonProgress: (sessionId) => ipcRenderer.invoke(ipcChannels.lessonsProgressGet, sessionId),
   saveLessonProgress: (sessionId, progress) => ipcRenderer.invoke(ipcChannels.lessonsProgressSet, sessionId, progress),
+  loadSessionWorkspace: (sessionId) => ipcRenderer.invoke(ipcChannels.workspaceGet, sessionId),
+  saveSessionWorkspace: (sessionId, patch) => ipcRenderer.invoke(ipcChannels.workspaceSet, sessionId, patch),
   onProgress: (callback) => {
     const listener = (_event, update) => callback(update)
     ipcRenderer.on(ipcChannels.progress, listener)

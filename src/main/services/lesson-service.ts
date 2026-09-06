@@ -1,7 +1,8 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { CourseProgress, ProgressEntry, SessionSummary } from '@/shared/types.js'
 import { createEmptyProgress } from '@/shared/course/types.js'
+import { writeJsonAtomically } from './json-file.js'
 
 const progressFileName = 'lesson-progress.json'
 
@@ -44,6 +45,6 @@ export async function loadProgress(session: SessionSummary): Promise<CourseProgr
 
 export async function saveProgress(session: SessionSummary, progress: unknown): Promise<CourseProgress> {
   const sanitized = sanitizeProgress(progress)
-  await writeFile(getProgressPath(session), JSON.stringify(sanitized, null, 2))
+  await writeJsonAtomically(getProgressPath(session), sanitized)
   return sanitized
 }

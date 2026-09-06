@@ -31,6 +31,10 @@ function runQueryWithShortcut(event: KeyboardEvent): void {
   void store.runCurrentQuizQuery()
 }
 
+function updateQueryDraft(event: Event): void {
+  store.updateCurrentQueryDraft((event.target as HTMLTextAreaElement).value)
+}
+
 function optionClass(option: string): string {
   if (!answered.value) return 'border-stone-300 bg-white hover:border-brand hover:bg-emerald-50'
   if (option === item.value?.question.answer) return 'border-emerald-500 bg-emerald-50 text-emerald-900'
@@ -51,6 +55,32 @@ function optionClass(option: string): string {
       </div>
     </header>
 
+    <nav
+      v-if="!quiz.finished"
+      class="flex flex-wrap gap-2 border-b border-stone-200 bg-stone-50 px-5 py-3"
+      aria-label="Quiz questions"
+      data-testid="quiz-question-navigation"
+    >
+      <button
+        v-for="(_quizItem, questionIndex) in quiz.items"
+        :key="questionIndex"
+        class="flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold"
+        :class="questionIndex === quiz.index
+          ? 'border-brand bg-brand text-white'
+          : questionIndex <= quiz.furthestIndex
+            ? 'border-stone-300 bg-white text-stone-700 hover:border-brand hover:text-brand'
+            : 'cursor-not-allowed border-stone-200 bg-stone-100 text-stone-400'"
+        :aria-current="questionIndex === quiz.index ? 'step' : undefined"
+        :aria-label="`Question ${questionIndex + 1}`"
+        :disabled="questionIndex > quiz.furthestIndex"
+        data-testid="quiz-question-navigation-item"
+        type="button"
+        @click="store.goToQuestion(questionIndex)"
+      >
+        {{ questionIndex + 1 }}
+      </button>
+    </nav>
+
     <div v-if="!quiz.finished && item" class="p-5">
       <p class="font-medium" data-testid="quiz-prompt">{{ item.question.prompt }}</p>
       <pre
@@ -60,11 +90,12 @@ function optionClass(option: string): string {
 
       <div v-if="item.question.kind === 'query'" class="mt-4">
         <textarea
-          v-model="item.queryDraft"
+          :value="item.queryDraft"
           class="min-h-36 w-full resize-y rounded-md border border-stone-300 bg-stone-50 p-3 font-mono text-[13px] leading-relaxed outline-none focus:border-brand focus:bg-white"
           data-testid="quiz-query-editor"
           spellcheck="false"
           :disabled="answered || item.queryRunning"
+          @input="updateQueryDraft"
           @keydown="runQueryWithShortcut"
         />
         <button

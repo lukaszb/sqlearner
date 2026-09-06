@@ -41,6 +41,11 @@ function sanitizeIdentifier(identifier: string): string {
     .replace(/[^a-zA-Z0-9_]/g, '_')
 }
 
+/** Copies database records into plain DTOs before they cross Electron's IPC boundary. */
+export function serializeRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map((row) => Object.fromEntries(Object.entries(row)))
+}
+
 async function findCsvFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = await Promise.all(
@@ -284,7 +289,9 @@ export async function getDatabaseSize(session: SessionSummary): Promise<number> 
 
 export async function previewTable(session: SessionSummary, tableName: string): Promise<TablePreview> {
   const db = await openWorkingDatabase(await markSessionUsed(session))
-  const rows = db.prepare(`SELECT * FROM ${quoteIdentifier(tableName)} LIMIT 100`).all() as Record<string, unknown>[]
+  const rows = serializeRows(
+    db.prepare(`SELECT * FROM ${quoteIdentifier(tableName)} LIMIT 100`).all() as Record<string, unknown>[]
+  )
   const columns = getTableColumns(db, tableName)
   db.close()
   return { columns, rows }
@@ -301,7 +308,7 @@ export function executeSql(db: Database.Database, sql: string): QueryResult {
   for (const single of statements) {
     const statement = db.prepare(single)
     if (statement.reader) {
-      const rows = statement.all() as Record<string, unknown>[]
+      const rows = serializeRows(statement.all() as Record<string, unknown>[])
       const columns = rows[0] ? Object.keys(rows[0]) : statement.columns().map((column) => column.name)
       result = { columns, rows, elapsedMs: 0 }
       continue

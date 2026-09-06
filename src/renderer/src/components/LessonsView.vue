@@ -19,12 +19,16 @@ const module = computed(() => located.value?.module ?? examModule.value)
 const changesData = computed(() => Boolean(module.value?.changesData))
 const showHint = ref(false)
 const showSolution = ref(false)
-const practiceDraft = ref('')
+const practiceDraft = computed({
+  get: () => lesson.value ? (store.practiceDrafts[lesson.value.id] ?? '') : '',
+  set: (value: string) => {
+    if (lesson.value) store.setPracticeDraft(lesson.value.id, value)
+  }
+})
 
 watch(selection, () => {
   showHint.value = false
   showSolution.value = false
-  practiceDraft.value = ''
 })
 
 const lessonDone = computed(() => (lesson.value ? store.isLessonDone(lesson.value.id) : false))

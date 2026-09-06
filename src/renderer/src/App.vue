@@ -28,7 +28,10 @@ watch(activeSession, (session) => {
 
   if (lessonsStore.progressLoadedFor !== session.id) {
     lessonsStore.resetForSession()
-    void lessonsStore.loadProgress(session.id)
+    void Promise.all([
+      lessonsStore.loadProgress(session.id),
+      lessonsStore.restoreWorkspace(session.id)
+    ])
   }
 }, { immediate: true })
 

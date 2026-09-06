@@ -1,6 +1,12 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
-import { assertCompleteKaggleDataset, getTableColumns, isKaggleCacheFresh } from '@/main/services/database-service'
+import {
+  assertCompleteKaggleDataset,
+  executeSql,
+  getTableColumns,
+  isKaggleCacheFresh,
+  serializeRows
+} from '@/main/services/database-service'
 
 describe('database metadata', () => {
   it('returns columns for empty tables', () => {
@@ -10,6 +16,26 @@ describe('database metadata', () => {
     expect(getTableColumns(db, 'lessons')).toEqual(['id', 'title'])
 
     db.close()
+  })
+
+  it('returns IPC-safe rows for pragma table-valued queries', () => {
+    const db = new Database(':memory:')
+    db.exec('CREATE TABLE order_items (id TEXT, price REAL)')
+
+    const result = executeSql(db, "SELECT name FROM pragma_table_info('order_items');")
+
+    expect(result.rows).toEqual([{ name: 'id' }, { name: 'price' }])
+    expect(Object.getPrototypeOf(result.rows[0])).toBe(Object.prototype)
+    expect(() => structuredClone(result)).not.toThrow()
+    db.close()
+  })
+
+  it('copies database rows into serializable ordinary objects', () => {
+    const source = Object.assign(Object.create(null) as Record<string, unknown>, { value: 1 })
+    const [serialized] = serializeRows([source])
+
+    expect(serialized).toEqual({ value: 1 })
+    expect(Object.getPrototypeOf(serialized)).toBe(Object.prototype)
   })
 })
 

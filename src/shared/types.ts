@@ -48,4 +48,45 @@ export interface SqlQueryTab {
   error?: string
 }
 
+export type WorkspaceView = 'database' | 'queries' | 'lessons'
+
+export type LessonSelectionSnapshot =
+  | { type: 'lesson'; lessonId: string }
+  | { type: 'exam'; moduleId: string }
+
+export interface QuizItemSnapshot {
+  question: import('./course/types.js').QuizQuestion
+  options: string[]
+  selected?: string
+  queryDraft: string
+}
+
+export interface QuizSnapshot {
+  mode: 'lesson' | 'exam'
+  targetId: string
+  title: string
+  items: QuizItemSnapshot[]
+  index: number
+  /** Highest question index the learner has reached; later questions stay locked. */
+  furthestIndex: number
+  finished: boolean
+  passed: boolean
+}
+
+/** The resumable part of the lesson UI. Completion data remains in lesson-progress.json. */
+export interface LessonWorkspaceState {
+  expandedModules: string[]
+  selection?: LessonSelectionSnapshot
+  quiz?: QuizSnapshot
+  attempts: Record<string, number>
+  practiceDrafts: Record<string, string>
+}
+
+export interface SessionWorkspaceState {
+  activeView: WorkspaceView
+  lessons: LessonWorkspaceState
+}
+
+export type SessionWorkspacePatch = Partial<SessionWorkspaceState>
+
 export type { CourseModule, CourseProgress, Lesson, LessonBlock, ModuleLevel, ProgressEntry, QuizQuestion } from './course/types.js'

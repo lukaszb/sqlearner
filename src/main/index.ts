@@ -3,10 +3,18 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ipcChannels } from '@/shared/ipc.js'
-import type { SessionSummary } from '@/shared/types.js'
-import { deleteSession, listSessions, openSessionFolder, renameSession } from './services/session-service.js'
+import type { SessionSummary, SessionWorkspacePatch } from '@/shared/types.js'
+import {
+  activateSession,
+  deleteSession,
+  getLastOpenedSessionId,
+  listSessions,
+  openSessionFolder,
+  renameSession
+} from './services/session-service.js'
 import { listTables, prepareDatabase, previewTable, resetWorkingDatabase, runQuery } from './services/database-service.js'
 import { loadProgress, saveProgress } from './services/lesson-service.js'
+import { loadWorkspace, updateWorkspace } from './services/workspace-service.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const applicationName = 'SQLearner'
@@ -59,6 +67,8 @@ async function createWindow(): Promise<void> {
 
 function registerIpc(): void {
   ipcMain.handle(ipcChannels.sessionsList, () => listSessions())
+  ipcMain.handle(ipcChannels.sessionsActivate, (_event, sessionId: string) => activateSession(sessionId))
+  ipcMain.handle(ipcChannels.sessionsLastOpened, () => getLastOpenedSessionId())
   ipcMain.handle(ipcChannels.sessionsPrepare, async () => {
     if (!mainWindow) throw new Error('Main window is not ready')
     return prepareDatabase(mainWindow)
@@ -89,6 +99,14 @@ function registerIpc(): void {
   ipcMain.handle(ipcChannels.lessonsProgressSet, async (_event, sessionId: string, progress: unknown) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
     return saveProgress(session, progress)
+  })
+  ipcMain.handle(ipcChannels.workspaceGet, async (_event, sessionId: string) => {
+    const session = findSessionOrThrow(await listSessions(), sessionId)
+    return loadWorkspace(session)
+  })
+  ipcMain.handle(ipcChannels.workspaceSet, async (_event, sessionId: string, patch: SessionWorkspacePatch) => {
+    const session = findSessionOrThrow(await listSessions(), sessionId)
+    return updateWorkspace(session, patch)
   })
 }
 

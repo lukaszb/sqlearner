@@ -1,9 +1,11 @@
 import { app, shell } from 'electron'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import type { SessionSummary } from '@/shared/types.js'
+import { writeJsonAtomically } from './json-file.js'
 
 const manifestName = 'session.json'
+const applicationStateName = 'app-state.json'
 
 export const workingDatabaseFileName = 'practice.sqlite'
 
@@ -69,13 +71,35 @@ export async function createPreparingSession(): Promise<SessionSummary> {
 }
 
 export async function saveSession(session: SessionSummary): Promise<void> {
-  await writeFile(path.join(session.folderPath, manifestName), JSON.stringify(session, null, 2))
+  await writeJsonAtomically(path.join(session.folderPath, manifestName), session)
 }
 
 export async function markSessionUsed(session: SessionSummary): Promise<SessionSummary> {
   const updated = { ...session, lastUsedAt: new Date().toISOString() }
   await saveSession(updated)
   return updated
+}
+
+export async function activateSession(sessionId: string): Promise<SessionSummary> {
+  const session = (await listSessions()).find((item) => item.id === sessionId)
+  if (!session) throw new Error('Session not found')
+
+  const updated = await markSessionUsed(session)
+  await writeJsonAtomically(path.join(app.getPath('userData'), applicationStateName), {
+    lastOpenedSessionId: updated.id
+  })
+  return updated
+}
+
+export async function getLastOpenedSessionId(): Promise<string | undefined> {
+  try {
+    const value = JSON.parse(
+      await readFile(path.join(app.getPath('userData'), applicationStateName), 'utf8')
+    ) as { lastOpenedSessionId?: unknown }
+    return typeof value.lastOpenedSessionId === 'string' ? value.lastOpenedSessionId : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export async function renameSession(sessionId: string, name: string): Promise<SessionSummary> {

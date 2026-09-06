@@ -1,7 +1,18 @@
-import type { CourseProgress, ProgressUpdate, QueryResult, SessionSummary, TablePreview, TableSummary } from '@/shared/types'
+import type {
+  CourseProgress,
+  ProgressUpdate,
+  QueryResult,
+  SessionSummary,
+  SessionWorkspacePatch,
+  SessionWorkspaceState,
+  TablePreview,
+  TableSummary
+} from '@/shared/types'
 
 interface SQLearnerApi {
   listSessions: () => Promise<SessionSummary[]>
+  activateSession: (sessionId: string) => Promise<SessionSummary>
+  getLastOpenedSessionId: () => Promise<string | undefined>
   prepareDatabase: () => Promise<SessionSummary>
   renameSession: (sessionId: string, name: string) => Promise<SessionSummary>
   openSessionFolder: (sessionId: string) => Promise<void>
@@ -12,6 +23,8 @@ interface SQLearnerApi {
   resetDatabase: (sessionId: string) => Promise<void>
   loadLessonProgress: (sessionId: string) => Promise<CourseProgress>
   saveLessonProgress: (sessionId: string, progress: CourseProgress) => Promise<CourseProgress>
+  loadSessionWorkspace: (sessionId: string) => Promise<SessionWorkspaceState>
+  saveSessionWorkspace: (sessionId: string, patch: SessionWorkspacePatch) => Promise<SessionWorkspaceState>
   onProgress: (callback: (update: ProgressUpdate) => void) => () => void
 }
 
