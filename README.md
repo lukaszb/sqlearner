@@ -55,7 +55,9 @@ npm run build:win
 npm run build:win:portable
 ```
 
-`npm run build:win` creates a Windows x64 installer in `release/`. `npm run build:win:portable` creates a portable Windows x64 `.exe` in the same directory. The Windows build runs from macOS through Electron Builder. Document any required signing, notarization, or Wine setup before release.
+`npm run build:win` creates a standalone Windows x64 `.exe` in `release/`; it does not require installation. `npm run build:mac` creates a ZIP containing a standalone `.app` for the current Mac architecture. After extracting the ZIP, the app can be launched or moved anywhere. `npm run build:release` builds both artifacts in one pass and must run on macOS. `build:win:portable` remains as an alias for `build:win`.
+
+Electron Builder uses an available Apple Developer identity automatically. Without signing and notarization credentials the Mac app is still built, but Gatekeeper may warn or block it on other Macs. A public release should be signed with an Apple Developer ID and notarized; the Windows portable executable likewise remains unsigned unless a Windows certificate is configured. Cross-building Windows from an Apple Silicon Mac may also require Wine.
 
 Windows packaging uses the prebuilt `better-sqlite3` binary included by the dependency. Electron Builder's native dependency rebuild is disabled because `node-gyp` cannot cross-compile a Windows x64 addon on a macOS ARM host.
 
@@ -73,11 +75,11 @@ also come from `GH_TOKEN`, a `GITHUB_TOKEN=` line in the gitignored `.env`, or
 
 The script cleans, builds, verifies and publishes in one pass: it wipes `dist/`,
 `release/` and the `*.tsbuildinfo` files, runs lint and unit tests, builds the
-Windows installer, checks the packed `app.asar` with `scripts/verify-asar.mjs`,
-creates a draft release, uploads the installer, compares the uploaded size against
-the local file and only then publishes. Use `--draft` to stop before publishing,
-`--skip-checks` to skip lint and tests, and `--skip-build` to retry an upload
-against the installer already in `release/`.
+standalone Windows `.exe` and macOS `.app` ZIP, checks `app.asar` in both packaged
+apps, creates a draft release, uploads both artifacts, compares their uploaded
+sizes against the local files and only then publishes. Use `--draft` to stop before
+publishing, `--skip-checks` to skip lint and tests, and `--skip-build` to reuse both
+artifacts already in `release/` (existing outputs are preserved in that mode).
 
 Deleting `dist/` without deleting the `*.tsbuildinfo` files is what breaks a
 manual build: `tsc` runs in composite mode, sees an up-to-date build info file and

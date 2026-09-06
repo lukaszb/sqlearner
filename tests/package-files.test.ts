@@ -16,7 +16,14 @@ const localSpecifier = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"]((?:\.|@\/
 
 const packageJson = JSON.parse(
   readFileSync(path.join(projectRoot, 'package.json'), 'utf8')
-) as { build: { files: string[] } }
+) as {
+  scripts: Record<string, string>
+  build: {
+    files: string[]
+    mac: { target: string; artifactName: string }
+    win: { target: string; artifactName: string }
+  }
+}
 
 function listSourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -69,5 +76,14 @@ describe('electron-builder file globs', () => {
 
   it('ships the bundled renderer', () => {
     expect(isShipped('renderer')).toBe(true)
+  })
+
+  it('builds standalone Windows and macOS release artifacts', () => {
+    expect(packageJson.build.win.target).toBe('portable')
+    expect(packageJson.build.mac.target).toBe('zip')
+    expect(packageJson.build.win.artifactName).toBe('${productName}-${version}-windows-${arch}.${ext}')
+    expect(packageJson.build.mac.artifactName).toBe('${productName}-${version}-mac-${arch}.${ext}')
+    expect(packageJson.scripts['build:release']).toContain('electron-builder --win portable --x64')
+    expect(packageJson.scripts['build:release']).toContain('electron-builder --mac zip')
   })
 })

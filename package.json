@@ -1,6 +1,6 @@
 {
   "name": "sqlearner",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Electron desktop app for learning SQL with a local SQLite dataset.",
   "main": "dist/main/index.js",
   "type": "module",
@@ -15,9 +15,10 @@
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json && tsc-alias -p tsconfig.main.json && npm run build:preload",
     "build:preload": "mkdir -p dist/preload && cp src/preload/index.cjs dist/preload/index.cjs",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:win": "npm run build && electron-builder --win --x64",
-    "build:win:portable": "npm run build && electron-builder --win portable --x64",
+    "build:mac": "npm run build && electron-builder --mac zip",
+    "build:win": "npm run build && electron-builder --win portable --x64",
+    "build:win:portable": "npm run build:win",
+    "build:release": "npm run build && electron-builder --win portable --x64 && electron-builder --mac zip",
     "clean": "rm -rf dist release && rm -f ./*.tsbuildinfo",
     "typecheck": "vue-tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.vitest.json",
     "lint": "eslint . --ext .ts,.vue",
@@ -76,11 +77,13 @@
     },
     "mac": {
       "icon": "assets/icon.icns",
-      "target": "dmg"
+      "target": "zip",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     },
     "win": {
       "icon": "assets/icon.ico",
-      "target": "nsis"
+      "target": "portable",
+      "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
     }
   },
   "allowScripts": {
