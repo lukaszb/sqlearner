@@ -40,6 +40,8 @@ Course content lives in `src/shared/course/`: one file per module in `modules/`,
 
 Use TypeScript with Vue, Pinia, and Tailwind for renderer work unless Electron compatibility forces a change. Prefer 2-space indentation, `PascalCase` for Vue components, `camelCase` for variables/functions, and `kebab-case`.
 
+Use English exclusively in source code, code comments, documentation, configuration comments, commit messages, and other repository-authored technical text.
+
 Keep IPC channel names explicit, for example `sessions:list`, `database:prepare`, and `query:run`. Long operations must report progress.
 
 Use Pinia for sessions, selected table, query tabs, and progress. Keep Tailwind classes readable; extract repeated patterns into Vue components.

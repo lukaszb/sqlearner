@@ -78,6 +78,9 @@ npm run build:mac:release
 
 Do not publish the output of `build:mac`: an ad-hoc signature is only a local-development convenience. Apps downloaded by other users must use the Developer ID and notarized release build to pass Gatekeeper.
 
+Detailed certificate setup, notarization and troubleshooting instructions are
+in [`docs/macos-code-signing.md`](docs/macos-code-signing.md).
+
 Windows packaging uses the prebuilt `better-sqlite3` binary included by the dependency. Electron Builder's native dependency rebuild is disabled because `node-gyp` cannot cross-compile a Windows x64 addon on a macOS ARM host.
 
 ## Releasing
