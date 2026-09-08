@@ -89,8 +89,25 @@ Windows packaging uses the prebuilt `better-sqlite3` binary included by the depe
 GITHUB_TOKEN=<token> scripts/release
 ```
 
-Bump `version` in `package.json` first — the script derives the tag (`v<version>`)
-and the asset name from it, and refuses to run if that release already exists.
+Install `uv` before running the release command. `scripts/release` is a Bash
+wrapper for `uv run --script scripts/release.py`; uv installs Rich and Questionary from the
+script's inline dependency metadata. Rich displays release stages and upload
+progress.
+
+The script offers four version choices: major, minor, patch, or keep the current
+version. Use the up/down arrow keys to select and Enter to confirm; keeping the
+current version is selected by default. Ctrl+C cancels. It updates `package.json` and `package-lock.json` using `npm version`.
+After a successful build and verification, it commits the version change and
+pushes it to the current branch on origin before creating the release, so the
+release tag points to the versioned commit. The working tree must initially be
+clean and synchronized with origin. Version changes and commits are preserved
+if a later step fails; inspect the working tree and any GitHub draft before
+retrying.
+
+For non-interactive runs, pass `--version major|minor|patch|keep`, for example
+`./scripts/release --version patch --draft`. `--skip-build` requires
+`--version keep` (or the fourth menu option). Existing releases, drafts and tags
+are rejected before changing the version.
 The token needs `repo` scope (classic) or `Contents: write` (fine-grained); it can
 also come from `GH_TOKEN`, a `GITHUB_TOKEN=` line in the gitignored `.env`, or
 `gh auth token`.
@@ -102,6 +119,21 @@ apps, creates a draft release, uploads both artifacts, compares their uploaded
 sizes against the local files and only then publishes. Use `--draft` to stop before
 publishing, `--skip-checks` to skip lint and tests, and `--skip-build` to reuse both
 artifacts already in `release/` (existing outputs are preserved in that mode).
+
+To build both artifacts for local testing without publishing:
+
+```bash
+./scripts/release --build-only --version keep
+```
+
+This mode accepts uncommitted changes and does not require GitHub credentials,
+fetch, commit, push, or create a release. It runs lint and tests (unless
+`--skip-checks` is passed), builds both artifacts in `release/`, and verifies
+their archives. It requires macOS; the Mac ZIP uses an ad-hoc signature without
+notarization, for testing on the build machine. Windows cross-builds may require
+Wine. The build cleans previous outputs first. Omit `--version` to use the
+four-option menu; an explicit bump updates both npm version files locally.
+`--build-only` cannot be combined with `--draft`, `--notes`, or `--skip-build`.
 
 Deleting `dist/` without deleting the `*.tsbuildinfo` files is what breaks a
 manual build: `tsc` runs in composite mode, sees an up-to-date build info file and
