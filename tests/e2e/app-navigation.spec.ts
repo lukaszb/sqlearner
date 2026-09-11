@@ -12,11 +12,16 @@ import type {
 
 declare global {
   interface Window {
+    sessionExported?: string
+    interactionTypes?: string[]
     deleteSessionCalled?: boolean
     resetDatabaseCalled?: boolean
     restoreLastSession?: boolean
     restoreQuiz?: boolean
     sqlearner: {
+      exportSession: (sessionId: string) => Promise<boolean>
+      importSession: () => Promise<SessionSummary | undefined>
+      recordSessionEvent: (sessionId: string, event: { type: string; data: unknown }) => Promise<void>
       listSessions: () => Promise<SessionSummary[]>
       activateSession: () => Promise<SessionSummary>
       getLastOpenedSessionId: () => Promise<string | undefined>
@@ -53,6 +58,9 @@ test.beforeEach(async ({ page }) => {
     }
 
     window.sqlearner = {
+      exportSession: async (id) => { window.sessionExported = id; return true },
+      importSession: async () => session,
+      recordSessionEvent: async (_id, event) => { (window.interactionTypes ??= []).push(event.type) },
       listSessions: async () => [session],
       activateSession: async () => session,
       getLastOpenedSessionId: async () => window.restoreLastSession || window.restoreQuiz ? session.id : undefined,
@@ -444,4 +452,24 @@ test('rebuilds the working copy from the database view', async ({ page }) => {
 
   await expect(page.getByTestId('reset-database-notice')).toBeVisible()
   expect(await page.evaluate(() => window.resetDatabaseCalled)).toBe(true)
+})
+
+
+test('exports and restores a session key and records user actions', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Restore session key' })).toBeVisible()
+  await page.getByRole('button', { name: 'Restore session key' }).click()
+  await expect(page.getByTestId('database-view')).toBeVisible()
+  await page.getByRole('button', { name: 'Save session key' }).click()
+  await expect(page.getByRole('status')).toHaveText('Session key saved.')
+  expect(await page.evaluate(() => window.sessionExported)).toBe('session-e2e')
+  expect(await page.evaluate(() => window.interactionTypes)).toContain('ui.app.selectTable')
+})
+
+test('shows transfer errors and allows another attempt', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => { window.sqlearner.importSession = async () => { throw new Error('Session key checksum mismatch') } })
+  await page.getByRole('button', { name: 'Restore session key' }).click()
+  await expect(page.getByRole('status')).toHaveText('Session key checksum mismatch')
+  await expect(page.getByRole('button', { name: 'Restore session key' })).toBeEnabled()
 })

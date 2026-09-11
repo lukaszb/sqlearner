@@ -97,17 +97,27 @@ progress.
 The script offers four version choices: major, minor, patch, or keep the current
 version. Use the up/down arrow keys to select and Enter to confirm; keeping the
 current version is selected by default. Ctrl+C cancels. It updates `package.json` and `package-lock.json` using `npm version`.
-After a successful build and verification, it commits the version change and
-pushes it to the current branch on origin before creating the release, so the
-release tag points to the versioned commit. The working tree must initially be
-clean and synchronized with origin. Version changes and commits are preserved
-if a later step fails; inspect the working tree and any GitHub draft before
-retrying.
+Publishing accepts uncommitted changes, including staged and untracked files,
+and builds from the current working tree. If the working tree is dirty at startup,
+the script does not commit or push anything; a version bump remains local and the
+staging area is preserved. The release tag refers to committed source, so GitHub's
+source archive does not include these local changes.
+With an initially clean working tree, a version bump is committed and pushed after
+successful verification so a new release tag points to the versioned commit.
+The current branch must still be synchronized with origin. Version changes and
+completed commits are preserved if a later step fails; inspect the working tree
+and any GitHub draft before retrying.
 
 For non-interactive runs, pass `--version major|minor|patch|keep`, for example
 `./scripts/release --version patch --draft`. `--skip-build` requires
-`--version keep` (or the fourth menu option). Existing releases, drafts and tags
-are rejected before changing the version.
+`--version keep` (or the fourth menu option). When keeping the version, an existing release or draft is reused and artifacts
+with matching filenames are deleted and uploaded again. Other assets and release
+notes are preserved unless `--notes` is supplied. Existing tags are reused without
+moving them, so the source archive still refers to the original tagged commit.
+Immutable releases cannot be overwritten; choose a new version instead.
+Replacement is not atomic: a failed upload may leave an asset missing; retry with
+`--version keep`. `--draft` converts an existing published release to a draft.
+When bumping the version, existing releases, drafts and tags are rejected.
 The token needs `repo` scope (classic) or `Contents: write` (fine-grained); it can
 also come from `GH_TOKEN`, a `GITHUB_TOKEN=` line in the gitignored `.env`, or
 `gh auth token`.
@@ -123,7 +133,8 @@ artifacts already in `release/` (existing outputs are preserved in that mode).
 To build both artifacts for local testing without publishing:
 
 ```bash
-./scripts/release --build-only --version keep
+npm run build:test
+# Equivalent: ./scripts/release --build-only --version keep
 ```
 
 This mode accepts uncommitted changes and does not require GitHub credentials,
@@ -131,8 +142,9 @@ fetch, commit, push, or create a release. It runs lint and tests (unless
 `--skip-checks` is passed), builds both artifacts in `release/`, and verifies
 their archives. It requires macOS; the Mac ZIP uses an ad-hoc signature without
 notarization, for testing on the build machine. Windows cross-builds may require
-Wine. The build cleans previous outputs first. Omit `--version` to use the
-four-option menu; an explicit bump updates both npm version files locally.
+Wine. The build cleans previous outputs first. Local builds default to keeping
+the current version; an explicit `--version patch|minor|major` updates both npm
+version files locally.
 `--build-only` cannot be combined with `--draft`, `--notes`, or `--skip-build`.
 
 Deleting `dist/` without deleting the `*.tsbuildinfo` files is what breaks a

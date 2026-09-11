@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import RunQueryShortcut from '@/renderer/src/components/RunQueryShortcut.vue'
 import { useLessonsStore } from '@/renderer/src/stores/lessons-store'
@@ -15,14 +15,11 @@ const correctCount = computed(
   () => quiz.value?.items.filter((entry) => entry.selected === entry.question.answer).length ?? 0
 )
 const isLast = computed(() => Boolean(quiz.value && quiz.value.index === quiz.value.items.length - 1))
-const hintVisible = ref(false)
-
-watch(
-  [() => quiz.value?.items, () => quiz.value?.index],
-  () => {
-    hintVisible.value = false
-  }
-)
+const hintKey = computed(() => `quiz:${store.drawCount}:${quiz.value?.targetId}:${quiz.value?.index}:hint`)
+const hintVisible = computed({
+  get: () => Boolean(store.disclosures[hintKey.value]),
+  set: (visible: boolean) => store.setDisclosure(hintKey.value, visible)
+})
 
 function runQueryWithShortcut(event: KeyboardEvent): void {
   if (!isRunQueryShortcut(event)) return

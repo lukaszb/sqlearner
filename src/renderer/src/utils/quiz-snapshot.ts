@@ -1,4 +1,4 @@
-import type { QuizQuestion, QuizSnapshot } from '@/shared/types'
+import type { QueryResult, QuizQuestion, QuizSnapshot } from '@/shared/types'
 
 export interface QuizSnapshotSource {
   mode: 'lesson' | 'exam'
@@ -8,6 +8,8 @@ export interface QuizSnapshotSource {
     question: QuizQuestion
     options: string[]
     selected?: string
+    queryResult?: QueryResult
+    queryError?: string
     queryDraft: string
   }>
   index: number
@@ -29,6 +31,8 @@ export function createQuizSnapshot(quiz: QuizSnapshotSource): QuizSnapshot {
       },
       options: [...item.options],
       ...(item.selected !== undefined ? { selected: item.selected } : {}),
+      ...(item.queryResult ? { queryResult: JSON.parse(JSON.stringify(item.queryResult)) as QueryResult } : {}),
+      ...(item.queryError ? { queryError: item.queryError } : {}),
       queryDraft: item.queryDraft
     })),
     index: quiz.index,

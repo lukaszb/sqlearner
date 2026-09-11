@@ -1,4 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { readFile, writeFile, stat, rename, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,8 +15,10 @@ import {
   renameSession
 } from './services/session-service.js'
 import { listTables, prepareDatabase, previewTable, resetWorkingDatabase, runQuery } from './services/database-service.js'
-import { loadProgress, saveProgress } from './services/lesson-service.js'
-import { loadWorkspace, updateWorkspace } from './services/workspace-service.js'
+import { sanitizeProgress } from './services/lesson-service.js'
+import { sanitizeWorkspace } from './services/workspace-service.js'
+import { appendEvent, readHistory, replayHistory, withSessionLock } from './services/session-history.js'
+import { exportSessionKey, importSessionKey } from './services/session-key.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const applicationName = 'SQLearner'
@@ -66,47 +70,113 @@ async function createWindow(): Promise<void> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(ipcChannels.sessionsList, () => listSessions())
-  ipcMain.handle(ipcChannels.sessionsActivate, (_event, sessionId: string) => activateSession(sessionId))
-  ipcMain.handle(ipcChannels.sessionsLastOpened, () => getLastOpenedSessionId())
-  ipcMain.handle(ipcChannels.sessionsPrepare, async () => {
+  const unlocked = new Set<string>([ipcChannels.sessionsList, ipcChannels.sessionsLastOpened,
+    ipcChannels.sessionsPrepare, ipcChannels.sessionsImport])
+  const handle = (channel: string, listener: Parameters<typeof ipcMain.handle>[1]) => {
+    ipcMain.handle(channel, (event, ...args) => {
+      if (unlocked.has(channel)) return listener(event, ...args)
+      const id = args[0]
+      if (typeof id !== 'string') throw new Error('Invalid session ID')
+      return withSessionLock(id, async () => {
+        const session = findSessionOrThrow(await listSessions(), id)
+        await readHistory(session)
+        const recorded = new Set<string>([ipcChannels.queryRun, ipcChannels.databasePreview,
+          ipcChannels.databaseReset, ipcChannels.sessionsActivate, ipcChannels.sessionsRename, ipcChannels.sessionsOpenFolder])
+        if (recorded.has(channel)) await appendEvent(session, `${channel}.requested`, args.slice(1))
+        try {
+          const result = await listener(event, ...args)
+          if (recorded.has(channel)) await appendEvent(session, `${channel}.succeeded`,
+            channel === ipcChannels.queryRun ? result : null)
+          return result
+        } catch (error) {
+          if (recorded.has(channel)) await appendEvent(session, `${channel}.failed`,
+            error instanceof Error ? error.message : String(error))
+          throw error
+        }
+      })
+    })
+  }
+  handle(ipcChannels.sessionsExport, async (_event, sessionId: string) => {
+    const session = findSessionOrThrow(await listSessions(), sessionId)
+    const destination = await dialog.showSaveDialog({ title: 'Save session key',
+      defaultPath: 'session.sqlr', filters: [{ name: 'SQLearner session key', extensions: ['sqlr'] }] })
+    if (destination.canceled || !destination.filePath) return false
+    mainWindow?.webContents.send(ipcChannels.progress, { sessionId, label: 'Generating session key…', percent: 0 })
+    try {
+      const key = await exportSessionKey(session)
+      const temporary = `${destination.filePath}.${randomUUID()}.tmp`
+      try {
+        await writeFile(temporary, key)
+        await rename(temporary, destination.filePath)
+      } finally { await rm(temporary, { force: true }) }
+      return true
+    } finally {
+      mainWindow?.webContents.send(ipcChannels.progress, { sessionId, label: 'Session export finished', percent: 100 })
+    }
+  })
+  handle(ipcChannels.sessionsImport, async () => {
+    const source = await dialog.showOpenDialog({ title: 'Restore session from key', properties: ['openFile'],
+      filters: [{ name: 'SQLearner session key', extensions: ['sqlr', 'txt'] }] })
+    if (source.canceled || !source.filePaths[0]) return undefined
+    if ((await stat(source.filePaths[0])).size > 1024 * 1024 * 1024) throw new Error('Session key exceeds the 1 GiB limit')
+    mainWindow?.webContents.send(ipcChannels.progress, { sessionId: 'import', label: 'Restoring session…', percent: 0 })
+    try {
+      return await importSessionKey(await readFile(source.filePaths[0], 'utf8'))
+    } finally {
+      mainWindow?.webContents.send(ipcChannels.progress, { sessionId: 'import', label: 'Session import finished', percent: 100 })
+    }
+  })
+  handle(ipcChannels.sessionsEvent, async (_event, sessionId: string, event: { type: string; data: unknown }) => {
+    if (!event || typeof event.type !== 'string' || !/^ui\.[a-zA-Z.]+$/.test(event.type)
+      || JSON.stringify(event).length > 8 * 1024 * 1024) throw new Error('Invalid interaction event')
+    await appendEvent(findSessionOrThrow(await listSessions(), sessionId), event.type, event.data)
+  })
+  handle(ipcChannels.sessionsList, () => listSessions())
+  handle(ipcChannels.sessionsActivate, (_event, sessionId: string) => activateSession(sessionId))
+  handle(ipcChannels.sessionsLastOpened, () => getLastOpenedSessionId())
+  handle(ipcChannels.sessionsPrepare, async () => {
     if (!mainWindow) throw new Error('Main window is not ready')
     return prepareDatabase(mainWindow)
   })
-  ipcMain.handle(ipcChannels.sessionsRename, (_event, sessionId: string, name: string) => renameSession(sessionId, name))
-  ipcMain.handle(ipcChannels.sessionsOpenFolder, (_event, sessionId: string) => openSessionFolder(sessionId))
-  ipcMain.handle(ipcChannels.sessionsDelete, (_event, sessionId: string) => deleteSession(sessionId))
-  ipcMain.handle(ipcChannels.databaseTables, async (_event, sessionId: string) => {
+  handle(ipcChannels.sessionsRename, (_event, sessionId: string, name: string) => renameSession(sessionId, name))
+  handle(ipcChannels.sessionsOpenFolder, (_event, sessionId: string) => openSessionFolder(sessionId))
+  handle(ipcChannels.sessionsDelete, (_event, sessionId: string) => deleteSession(sessionId))
+  handle(ipcChannels.databaseTables, async (_event, sessionId: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
     return listTables(session)
   })
-  ipcMain.handle(ipcChannels.databasePreview, async (_event, sessionId: string, tableName: string) => {
+  handle(ipcChannels.databasePreview, async (_event, sessionId: string, tableName: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
     return previewTable(session, tableName)
   })
-  ipcMain.handle(ipcChannels.queryRun, async (_event, sessionId: string, sql: string) => {
+  handle(ipcChannels.queryRun, async (_event, sessionId: string, sql: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
     return runQuery(session, sql)
   })
-  ipcMain.handle(ipcChannels.databaseReset, async (_event, sessionId: string) => {
+  handle(ipcChannels.databaseReset, async (_event, sessionId: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
     await resetWorkingDatabase(session)
   })
-  ipcMain.handle(ipcChannels.lessonsProgressGet, async (_event, sessionId: string) => {
+  handle(ipcChannels.lessonsProgressGet, async (_event, sessionId: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
-    return loadProgress(session)
+    return replayHistory(await readHistory(session)).progress
   })
-  ipcMain.handle(ipcChannels.lessonsProgressSet, async (_event, sessionId: string, progress: unknown) => {
+  handle(ipcChannels.lessonsProgressSet, async (_event, sessionId: string, progress: unknown) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
-    return saveProgress(session, progress)
+    const updated = sanitizeProgress(progress)
+    await appendEvent(session, 'progress.updated', updated)
+    return updated
   })
-  ipcMain.handle(ipcChannels.workspaceGet, async (_event, sessionId: string) => {
+  handle(ipcChannels.workspaceGet, async (_event, sessionId: string) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
-    return loadWorkspace(session)
+    return replayHistory(await readHistory(session)).workspace
   })
-  ipcMain.handle(ipcChannels.workspaceSet, async (_event, sessionId: string, patch: SessionWorkspacePatch) => {
+  handle(ipcChannels.workspaceSet, async (_event, sessionId: string, patch: SessionWorkspacePatch) => {
     const session = findSessionOrThrow(await listSessions(), sessionId)
-    return updateWorkspace(session, patch)
+    const current = replayHistory(await readHistory(session)).workspace
+    const updated = sanitizeWorkspace({ ...current, ...patch })
+    await appendEvent(session, 'workspace.updated', updated)
+    return updated
   })
 }
 

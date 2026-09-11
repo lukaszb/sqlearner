@@ -95,22 +95,46 @@ class GitHub:
             headers = {**self.headers, "Content-Type": "application/json"}
             connection.request(method, f"/repos/{self.repo}{endpoint}", json.dumps(payload) if payload is not None else None, headers)
             response = connection.getresponse()
-            data = json.loads(response.read())
+            body = response.read()
+            data = json.loads(body) if body else {}
             if response.status >= 400:
                 raise ValueError(f"GitHub {method} {endpoint}: HTTP {response.status}: {data.get('message', 'Request failed')}")
             return data
         finally:
             connection.close()
 
-    def ensure_available(self, tag):
+    def find_release(self, tag):
         page = 1
         while True:
             releases = self.request("GET", f"/releases?per_page=100&page={page}")
-            if any(item["tag_name"] == tag for item in releases):
-                raise ValueError(f"Release or draft {tag} already exists; publish/delete it or choose another version")
+            for item in releases:
+                if item["tag_name"] == tag:
+                    return item
             if len(releases) < 100:
+                return None
+            page += 1
+
+    def prepare_release(self, tag, replace):
+        existing = self.find_release(tag)
+        if existing:
+            if not replace:
+                raise ValueError(f"Release or draft {tag} already exists; choose another version")
+            if existing.get("immutable"):
+                raise ValueError(f"Release {tag} is immutable; GitHub forbids replacing assets, choose another version")
+        return existing
+
+    def replace_asset(self, release_id, artifact, progress):
+        page = 1
+        while True:
+            assets = self.request("GET", f"/releases/{release_id}/assets?per_page=100&page={page}")
+            matching = next((asset for asset in assets if asset["name"] == artifact.name), None)
+            if matching:
+                self.request("DELETE", f"/releases/assets/{matching['id']}")
+                break
+            if len(assets) < 100:
                 break
             page += 1
+        self.upload(release_id, artifact, progress)
 
     def upload(self, release_id, artifact, progress):
         size = artifact.stat().st_size
@@ -164,27 +188,29 @@ def main():
             raise ValueError(f"{tool} is required on PATH")
     if platform.system() != "Darwin":
         raise ValueError("macOS is required to verify and build the Mac artifact")
+    dirty = False
     if not args.build_only:
         api = GitHub(args.repo, github_token())
-        if run("git", "status", "--porcelain", capture=True):
-            raise ValueError("Working tree is dirty; commit or stash first")
+        dirty = bool(run("git", "status", "--porcelain", capture=True))
         branch = run("git", "symbolic-ref", "--short", "HEAD", capture=True)
         run("git", "fetch", "--quiet", "origin", branch)
         commit = run("git", "rev-parse", "HEAD", capture=True)
         if commit != run("git", "rev-parse", f"origin/{branch}", capture=True):
             raise ValueError(f"{branch} differs from origin/{branch}; push or pull first")
     current = json.loads(Path("package.json").read_text())["version"]
-    version = select_version(current, args.version, args.skip_build)
+    version = select_version(current, args.version or ("keep" if args.build_only else None), args.skip_build)
     tag = f"v{version}"
     if not args.build_only:
-        api.ensure_available(tag)
-        if run("git", "tag", "--list", tag, capture=True) or run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}", capture=True):
+        existing = api.prepare_release(tag, replace=version == current)
+        if version != current and (run("git", "tag", "--list", tag, capture=True) or run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}", capture=True)):
             raise ValueError(f"Tag {tag} already exists")
         console.print(f"{args.repo} • {branch} • {current} → {version}", markup=False)
     else:
         console.print(f"Local test build • {current} → {version}", markup=False)
     changed = version != current
-    if changed and not args.build_only:
+    if dirty:
+        console.print("Building from the working tree. Local changes will not be committed or pushed; the release tag refers to committed source only.")
+    if changed and not args.build_only and not dirty:
         console.print("The version will be committed and pushed after successful verification.")
     release_id = None
     with Progress(SpinnerColumn(), TextColumn("{task.description}"), BarColumn(), TaskProgressColumn(), console=console) as progress:
@@ -236,27 +262,37 @@ def main():
         run("xcrun", "stapler", "validate", app)
         progress.advance(task)
         progress.update(task, description="Recording release version")
-        if changed:
+        if changed and not dirty:
             run("git", "add", "--", "package.json", "package-lock.json")
             run("git", "commit", "-m", f"Bump version to {version}")
             run("git", "push", "origin", f"HEAD:refs/heads/{branch}")
             commit = run("git", "rev-parse", "HEAD", capture=True)
         progress.advance(task)
-        progress.update(task, description=f"Creating draft {tag}")
+        progress.update(task, description=f"Updating release {tag}" if existing else f"Creating draft {tag}")
         payload = {"tag_name": tag, "target_commitish": commit, "name": f"SQLearner {version}", "draft": True, "prerelease": False, "generate_release_notes": notes is None}
         if notes is not None:
             payload["body"] = notes
-        release_id = api.request("POST", "/releases", payload)["id"]
-        console.print(f"Draft created: https://github.com/{args.repo}/releases/{release_id}")
+        if existing:
+            release_id = existing["id"]
+            updates = {}
+            if notes is not None:
+                updates["body"] = notes
+            if args.draft and not existing["draft"]:
+                updates["draft"] = True
+            if updates:
+                api.request("PATCH", f"/releases/{release_id}", updates)
+        else:
+            release_id = api.request("POST", "/releases", payload)["id"]
+        console.print(f"Release: https://github.com/{args.repo}/releases/{release_id}")
         progress.advance(task)
         progress.update(task, description="Uploading and verifying artifacts")
         try:
             for artifact in (windows, macs[0]):
-                api.upload(release_id, artifact, progress)
+                api.replace_asset(release_id, artifact, progress)
             if not args.draft:
                 api.request("PATCH", f"/releases/{release_id}", {"draft": False, "make_latest": "true"})
         except Exception:
-            console.print(f"Release {tag} may remain a draft; inspect GitHub before retrying.")
+            console.print(f"Release {tag} may have partially updated assets; retry with --version keep after inspecting GitHub.")
             raise
         progress.update(task, description="Draft ready" if args.draft else "Published", advance=1)
     console.print(f"https://github.com/{args.repo}/releases" + (f"/{release_id}" if args.draft else f"/tag/{tag}"))

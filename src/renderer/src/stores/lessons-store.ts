@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { seededRandom } from '@/shared/course/quiz'
 import {
   course,
   createEmptyProgress,
@@ -45,6 +46,8 @@ export interface RunState {
 }
 
 interface LessonsState {
+  disclosures: Record<string, boolean>
+  drawCount: number
   progress: CourseProgress
   progressLoadedFor: string | undefined
   expandedModules: string[]
@@ -56,7 +59,7 @@ interface LessonsState {
   error: string | undefined
 }
 
-const workspaceSaveTimers = new Map<string, number>()
+
 
 function restoredQuiz(snapshot: QuizSnapshot | undefined, selection: LessonSelection | undefined): QuizState | undefined {
   if (!snapshot || !selection) return undefined
@@ -71,6 +74,8 @@ function restoredQuiz(snapshot: QuizSnapshot | undefined, selection: LessonSelec
       question: item.question,
       options: [...item.options],
       ...(item.selected !== undefined ? { selected: item.selected } : {}),
+      queryResult: item.queryResult,
+      queryError: item.queryError,
       queryDraft: item.queryDraft
     }))
   }
@@ -78,6 +83,8 @@ function restoredQuiz(snapshot: QuizSnapshot | undefined, selection: LessonSelec
 
 export const useLessonsStore = defineStore('lessons', {
   state: (): LessonsState => ({
+    disclosures: {},
+    drawCount: 0,
     progress: createEmptyProgress(),
     progressLoadedFor: undefined,
     expandedModules: [course[0]?.id ?? ''],
@@ -102,6 +109,14 @@ export const useLessonsStore = defineStore('lessons', {
     completedLessonCount: (state) => Object.keys(state.progress.lessons).length
   },
   actions: {
+    setDisclosure(key: string, visible: boolean) {
+      this.disclosures[key] = visible
+      this.persistWorkspace()
+    },
+    usePracticeSolution(lessonId: string) {
+      const located = findLesson(lessonId)
+      if (located) this.setPracticeDraft(lessonId, located.lesson.practice.solution)
+    },
     isModuleExpanded(moduleId: string): boolean {
       return this.expandedModules.includes(moduleId)
     },
@@ -139,6 +154,9 @@ export const useLessonsStore = defineStore('lessons', {
       const validModules = new Set(course.map((module) => module.id))
       this.expandedModules = workspace.expandedModules.filter((id) => validModules.has(id))
       if (this.expandedModules.length === 0 && course[0]) this.expandedModules = [course[0].id]
+      this.disclosures = workspace.disclosures ?? {}
+      this.drawCount = workspace.drawCount ?? 0
+      this.runs = workspace.runs ?? {}
       this.attempts = { ...workspace.attempts }
       this.practiceDrafts = { ...workspace.practiceDrafts }
 
@@ -153,6 +171,9 @@ export const useLessonsStore = defineStore('lessons', {
     },
     workspaceSnapshot(): LessonWorkspaceState {
       return {
+        disclosures: { ...this.disclosures },
+        drawCount: this.drawCount,
+        runs: JSON.parse(JSON.stringify(this.runs)) as Record<string, RunState>,
         expandedModules: [...this.expandedModules],
         ...(this.selection ? { selection: { ...this.selection } } : {}),
         ...(this.quiz ? { quiz: createQuizSnapshot(this.quiz) } : {}),
@@ -160,34 +181,26 @@ export const useLessonsStore = defineStore('lessons', {
         practiceDrafts: { ...this.practiceDrafts }
       }
     },
-    persistWorkspace(delayMs = 0) {
-      const app = useAppStore()
-      const sessionId = app.activeSessionId
+    persistWorkspace() {
+      const sessionId = useAppStore().activeSessionId
       if (!sessionId || !window.sqlearner?.saveSessionWorkspace) return
-      const pending = workspaceSaveTimers.get(sessionId)
-      if (pending !== undefined) window.clearTimeout(pending)
-      const snapshot = this.workspaceSnapshot()
-
-      const save = () => {
-        workspaceSaveTimers.delete(sessionId)
-        void window.sqlearner.saveSessionWorkspace(sessionId, { lessons: snapshot })
-          .catch((error: unknown) => {
-            this.error = error instanceof Error ? error.message : 'Failed to save lesson state'
-          })
-      }
-      if (delayMs > 0) workspaceSaveTimers.set(sessionId, window.setTimeout(save, delayMs))
-      else save()
+      void window.sqlearner.saveSessionWorkspace(sessionId, { lessons: this.workspaceSnapshot() })
+        .catch((error: unknown) => {
+          this.error = error instanceof Error ? error.message : 'Failed to save lesson state'
+        })
     },
     async persistProgress() {
       const app = useAppStore()
       if (!app.activeSessionId || !window.sqlearner?.saveLessonProgress) return
       try {
-        await window.sqlearner.saveLessonProgress(app.activeSessionId, this.progress)
+        await window.sqlearner.saveLessonProgress(app.activeSessionId, JSON.parse(JSON.stringify(this.progress)) as CourseProgress)
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Failed to save lesson progress'
       }
     },
     resetForSession() {
+      this.disclosures = {}
+      this.drawCount = 0
       this.progress = createEmptyProgress()
       this.progressLoadedFor = undefined
       this.selection = undefined
@@ -222,12 +235,13 @@ export const useLessonsStore = defineStore('lessons', {
     startLessonQuiz(lessonId: string) {
       const located = findLesson(lessonId)
       if (!located) return
+      const random = seededRandom(`${useAppStore().activeSession?.seed ?? useAppStore().activeSessionId}:${this.drawCount++}`)
       this.quiz = {
         mode: 'lesson',
         targetId: lessonId,
         title: located.lesson.title,
-        items: drawLessonQuestions(located.lesson).map((question) => ({
-          ...presentQuestion(question),
+        items: drawLessonQuestions(located.lesson, undefined, random).map((question) => ({
+          ...presentQuestion(question, random),
           queryDraft: question.starterSql ?? ''
         })),
         index: 0,
@@ -240,12 +254,13 @@ export const useLessonsStore = defineStore('lessons', {
     startExam(moduleId: string) {
       const module = findModule(moduleId)
       if (!module) return
+      const random = seededRandom(`${useAppStore().activeSession?.seed ?? useAppStore().activeSessionId}:${this.drawCount++}`)
       this.quiz = {
         mode: 'exam',
         targetId: moduleId,
         title: `${module.title} - module exam`,
-        items: drawExamQuestions(module, moduleExamSize(module)).map((question) => ({
-          ...presentQuestion(question),
+        items: drawExamQuestions(module, moduleExamSize(module), random).map((question) => ({
+          ...presentQuestion(question, random),
           queryDraft: ''
         })),
         index: 0,
@@ -276,11 +291,11 @@ export const useLessonsStore = defineStore('lessons', {
       const item = this.quiz?.items[this.quiz.index]
       if (!item || item.selected !== undefined) return
       item.queryDraft = value
-      this.persistWorkspace(150)
+      this.persistWorkspace()
     },
     setPracticeDraft(lessonId: string, value: string) {
       this.practiceDrafts[lessonId] = value
-      this.persistWorkspace(150)
+      this.persistWorkspace()
     },
     async runCurrentQuizQuery() {
       const quiz = this.quiz
@@ -310,6 +325,7 @@ export const useLessonsStore = defineStore('lessons', {
         item.queryError = error instanceof Error ? error.message : 'Query failed'
       } finally {
         item.queryRunning = false
+        this.persistWorkspace()
       }
     },
     nextQuestion() {
@@ -332,7 +348,7 @@ export const useLessonsStore = defineStore('lessons', {
     },
     async finishQuiz() {
       const quiz = this.quiz
-      if (!quiz) return
+      if (!quiz || quiz.finished || quiz.items.some((item) => item.selected === undefined)) return
       const passed = quiz.items.every((item) => item.selected === item.question.answer)
       const key = `${quiz.mode}:${quiz.targetId}`
       const attempts = (this.attempts[key] ?? 0) + 1
@@ -361,16 +377,22 @@ export const useLessonsStore = defineStore('lessons', {
         if (result.changes !== undefined) app.markTablesStale()
       } catch (error) {
         this.runs[key] = { running: false, error: error instanceof Error ? error.message : 'Query failed' }
+      } finally {
+        this.persistWorkspace()
       }
     },
     clearRun(key: string) {
       delete this.runs[key]
+      this.persistWorkspace()
     },
     /** Resets the working copy and drops the results of the lesson statements that ran against it. */
     async resetDatabase() {
       const app = useAppStore()
       const reset = await app.resetDatabase()
-      if (reset) this.runs = {}
+      if (reset) {
+        this.runs = {}
+        this.persistWorkspace()
+      }
     }
   }
 })

@@ -71,6 +71,8 @@ function quizItem(value: unknown): QuizItemSnapshot | undefined {
     question: question as unknown as QuizItemSnapshot['question'],
     options: strings(raw.options),
     ...(typeof raw.selected === 'string' ? { selected: raw.selected } : {}),
+    ...(typeof raw.queryError === 'string' ? { queryError: raw.queryError } : {}),
+    ...(raw.queryResult && typeof raw.queryResult === 'object' ? { queryResult: raw.queryResult as QuizItemSnapshot['queryResult'] } : {}),
     queryDraft: raw.queryDraft
   }
 }
@@ -109,6 +111,12 @@ function lessons(value: unknown): LessonWorkspaceState {
   const restoredSelection = selection(raw.selection)
   const restoredQuiz = quiz(raw.quiz)
   return {
+    ...(raw.disclosures && typeof raw.disclosures === 'object' ? { disclosures: Object.fromEntries(
+      Object.entries(raw.disclosures).filter((entry) => typeof entry[1] === 'boolean')) as Record<string, boolean> } : {}),
+    ...(typeof raw.drawCount === 'number' && Number.isSafeInteger(raw.drawCount) && raw.drawCount >= 0 ? { drawCount: raw.drawCount } : {}),
+    ...(raw.runs && typeof raw.runs === 'object' ? { runs: Object.fromEntries(Object.entries(raw.runs)
+      .filter(([, run]) => run && typeof run === 'object')
+      .map(([key, run]) => [key, { ...run, running: false }])) as LessonWorkspaceState['runs'] } : {}),
     expandedModules: strings(raw.expandedModules),
     ...(restoredSelection ? { selection: restoredSelection } : {}),
     ...(restoredQuiz ? { quiz: restoredQuiz } : {}),
@@ -123,7 +131,13 @@ function view(value: unknown): WorkspaceView {
 
 export function sanitizeWorkspace(value: unknown): SessionWorkspaceState {
   const raw = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-  return { activeView: view(raw.activeView), lessons: lessons(raw.lessons) }
+  const queryTabs = Array.isArray(raw.queryTabs) ? raw.queryTabs.filter((tab) =>
+    tab && typeof tab.id === 'string' && typeof tab.title === 'string' && typeof tab.sql === 'string') : undefined
+  return { activeView: view(raw.activeView), lessons: lessons(raw.lessons),
+    ...(queryTabs ? { queryTabs } : {}),
+    ...(typeof raw.activeQueryTabId === 'string' ? { activeQueryTabId: raw.activeQueryTabId } : {}),
+    ...(typeof raw.selectedTable === 'string' ? { selectedTable: raw.selectedTable } : {}) }
+
 }
 
 function workspacePath(session: SessionSummary): string {

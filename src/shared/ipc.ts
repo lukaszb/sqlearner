@@ -1,4 +1,7 @@
 export const ipcChannels = {
+  sessionsExport: 'sessions:export',
+  sessionsImport: 'sessions:import',
+  sessionsEvent: 'sessions:event',
   sessionsList: 'sessions:list',
   sessionsActivate: 'sessions:activate',
   sessionsLastOpened: 'sessions:last-opened',

@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 const ipcChannels = {
+  sessionsExport: 'sessions:export',
+  sessionsImport: 'sessions:import',
+  sessionsEvent: 'sessions:event',
   sessionsList: 'sessions:list',
   sessionsActivate: 'sessions:activate',
   sessionsLastOpened: 'sessions:last-opened',
@@ -20,6 +23,9 @@ const ipcChannels = {
 }
 
 const api = {
+  exportSession: (sessionId) => ipcRenderer.invoke(ipcChannels.sessionsExport, sessionId),
+  importSession: () => ipcRenderer.invoke(ipcChannels.sessionsImport),
+  recordSessionEvent: (sessionId, event) => ipcRenderer.invoke(ipcChannels.sessionsEvent, sessionId, event),
   listSessions: () => ipcRenderer.invoke(ipcChannels.sessionsList),
   activateSession: (sessionId) => ipcRenderer.invoke(ipcChannels.sessionsActivate, sessionId),
   getLastOpenedSessionId: () => ipcRenderer.invoke(ipcChannels.sessionsLastOpened),

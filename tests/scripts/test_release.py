@@ -58,7 +58,7 @@ class ReleaseTests(unittest.TestCase):
         api = release.GitHub("owner/repo", "fake")
         with patch.object(api, "request", side_effect=[[{"tag_name": "v0.0.1"}] * 100, [{"tag_name": "v1.2.3", "draft": True}]]):
             with self.assertRaisesRegex(ValueError, "already exists"):
-                api.ensure_available("v1.2.3")
+                api.prepare_release("v1.2.3", replace=False)
 
     def test_upload_failure_is_not_accepted(self):
         api = release.GitHub("owner/repo", "fake")
@@ -93,7 +93,7 @@ class ReleaseTests(unittest.TestCase):
                         asar.parent.mkdir(parents=True)
                         asar.touch()
 
-                with patch.object(release, "ROOT", root), patch.object(release.sys, "argv", ["release", "--build-only", "--version", "keep"]), patch.object(release.shutil, "which", return_value="tool"), patch.object(release.platform, "system", return_value="Darwin"), patch.object(release, "github_token") as token, patch.object(release, "GitHub") as github, patch.object(release, "run", side_effect=build) as run:
+                with patch.object(release, "ROOT", root), patch.object(release.sys, "argv", ["release", "--build-only"]), patch.object(release.shutil, "which", return_value="tool"), patch.object(release.platform, "system", return_value="Darwin"), patch.object(release, "github_token") as token, patch.object(release, "GitHub") as github, patch.object(release, "run", side_effect=build) as run:
                     release.main()
                     token.assert_not_called()
                     github.assert_not_called()
@@ -115,3 +115,99 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as error:
                     release.parse_args()
                 self.assertEqual(error.exception.code, 2)
+
+    def test_keep_reuses_existing_release_or_draft(self):
+        api = release.GitHub("owner/repo", "fake")
+        for draft in (True, False):
+            existing = {"id": 123, "tag_name": "v1.2.3", "draft": draft}
+            with patch.object(api, "request", return_value=[existing]):
+                self.assertEqual(api.prepare_release("v1.2.3", replace=True), existing)
+
+    def test_immutable_release_is_rejected_before_upload(self):
+        api = release.GitHub("owner/repo", "fake")
+        with patch.object(api, "request", return_value=[{"tag_name": "v1.2.3", "immutable": True}]) as request:
+            with self.assertRaisesRegex(ValueError, "immutable"):
+                api.prepare_release("v1.2.3", replace=True)
+            request.assert_called_once()
+
+    def test_missing_release_can_be_created(self):
+        api = release.GitHub("owner/repo", "fake")
+        with patch.object(api, "request", return_value=[]):
+            self.assertIsNone(api.prepare_release("v1.2.3", replace=True))
+
+    def test_replacement_deletes_only_matching_asset_on_later_page(self):
+        api = release.GitHub("owner/repo", "fake")
+        artifact = Path("app.zip")
+        with patch.object(api, "request", side_effect=[
+            [{"id": 1, "name": "other.zip"}] * 100,
+            [{"id": 2, "name": "app.zip"}], {},
+        ]) as request, patch.object(api, "upload") as upload:
+            api.replace_asset(123, artifact, None)
+            self.assertEqual(request.call_args.args, ("DELETE", "/releases/assets/2"))
+            upload.assert_called_once_with(123, artifact, None)
+
+    def test_replacement_uploads_missing_asset(self):
+        api = release.GitHub("owner/repo", "fake")
+        with patch.object(api, "request", return_value=[]) as request, patch.object(api, "upload") as upload:
+            api.replace_asset(123, Path("app.zip"), None)
+            request.assert_called_once_with("GET", "/releases/123/assets?per_page=100&page=1")
+            upload.assert_called_once()
+
+    def test_delete_accepts_empty_204_response(self):
+        api = release.GitHub("owner/repo", "fake")
+        with patch.object(release.http.client, "HTTPSConnection") as connection:
+            response = connection.return_value.getresponse.return_value
+            response.status = 204
+            response.read.return_value = b""
+            self.assertEqual(api.request("DELETE", "/releases/assets/2"), {})
+            connection.return_value.close.assert_called_once()
+
+    def test_keep_release_replaces_artifacts_without_creating_release_or_commit(self):
+        self.check_release_from_working_tree("keep", "")
+
+    def test_keep_release_accepts_staged_unstaged_and_untracked_changes(self):
+        self.check_release_from_working_tree("keep", " M source.ts\nM  staged.ts\n?? new.ts")
+
+    def test_version_bump_in_dirty_tree_does_not_commit_or_push_local_changes(self):
+        self.check_release_from_working_tree("patch", " M package.json\nM  staged.ts\n?? new.ts")
+
+    def check_release_from_working_tree(self, change, status):
+        import os
+        from tempfile import TemporaryDirectory
+
+        previous = Path.cwd()
+        try:
+            with TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "package.json").write_text('{"version": "1.2.3"}')
+                output = root / "release"
+                output.mkdir()
+                version = "1.2.4" if change == "patch" else "1.2.3"
+                (output / f"SQLearner-{version}-windows-x64.exe").touch()
+                (output / f"SQLearner-{version}-mac-arm64.zip").touch()
+                asar = output / "mac-arm64/SQLearner.app/Contents/Resources/app.asar"
+                asar.parent.mkdir(parents=True)
+                asar.touch()
+
+                def command_result(*command, **kwargs):
+                    if command[:2] == ("git", "status"):
+                        return status
+                    if command[:2] in (("git", "tag"), ("git", "ls-remote")):
+                        return ""
+                    if command[:2] == ("git", "symbolic-ref"):
+                        return "main"
+                    if command[:2] == ("git", "rev-parse"):
+                        return "commit-sha"
+
+                with patch.object(release, "ROOT", root), patch.object(release.sys, "argv", ["release", "--version", change, "--skip-checks"]), patch.object(release.shutil, "which", return_value="tool"), patch.object(release.platform, "system", return_value="Darwin"), patch.object(release, "github_token", return_value="fake"), patch.object(release, "GitHub") as github, patch.object(release, "run", side_effect=command_result) as run, patch.object(release.shutil, "rmtree"):
+
+                    api = github.return_value
+                    api.prepare_release.return_value = {"id": 123, "draft": False}
+                    release.main()
+                    api.prepare_release.assert_called_once_with(f"v{version}", replace=change == "keep")
+                    self.assertEqual(api.replace_asset.call_count, 2)
+                    api.request.assert_called_once_with("PATCH", "/releases/123", {"draft": False, "make_latest": "true"})
+                    commands = [call.args for call in run.call_args_list]
+                    self.assertFalse(any(command[:2] in (("git", "commit"), ("git", "push"), ("git", "add")) for command in commands))
+        finally:
+            os.chdir(previous)

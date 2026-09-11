@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { levelLabels, moduleExamSize } from '@/shared/course'
 import { useAppStore } from '@/renderer/src/stores/app-store'
@@ -17,18 +17,19 @@ const examModule = computed(() => store.activeExamModule)
 const lesson = computed(() => located.value?.lesson)
 const module = computed(() => located.value?.module ?? examModule.value)
 const changesData = computed(() => Boolean(module.value?.changesData))
-const showHint = ref(false)
-const showSolution = ref(false)
+function disclosure(kind: string) {
+  return computed({
+    get: () => Boolean(store.disclosures[`${lesson.value?.id}:${kind}`]),
+    set: (visible: boolean) => store.setDisclosure(`${lesson.value?.id}:${kind}`, visible)
+  })
+}
+const showHint = disclosure('hint')
+const showSolution = disclosure('solution')
 const practiceDraft = computed({
   get: () => lesson.value ? (store.practiceDrafts[lesson.value.id] ?? '') : '',
   set: (value: string) => {
     if (lesson.value) store.setPracticeDraft(lesson.value.id, value)
   }
-})
-
-watch(selection, () => {
-  showHint.value = false
-  showSolution.value = false
 })
 
 const lessonDone = computed(() => (lesson.value ? store.isLessonDone(lesson.value.id) : false))
@@ -47,7 +48,7 @@ function startExam(): void {
 }
 
 function useSolution(): void {
-  if (lesson.value) practiceDraft.value = lesson.value.practice.solution
+  if (lesson.value) store.usePracticeSolution(lesson.value.id)
 }
 </script>
 

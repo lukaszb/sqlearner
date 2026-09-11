@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { SqlBreakdownItem } from '@/shared/course'
 import RunQueryShortcut from '@/renderer/src/components/RunQueryShortcut.vue'
@@ -24,21 +24,13 @@ const emit = defineEmits<{
 const store = useLessonsStore()
 const { runs } = storeToRefs(store)
 
-const draft = ref(props.modelValue ?? props.sql)
-watch(
-  () => props.sql,
-  (next) => {
-    if (props.modelValue !== undefined) return
-    draft.value = next
+const draft = computed({
+  get: () => props.modelValue ?? store.practiceDrafts[props.runKey] ?? props.sql,
+  set: (value: string) => {
+    if (props.modelValue !== undefined) emit('update:modelValue', value)
+    else store.setPracticeDraft(props.runKey, value)
   }
-)
-watch(
-  () => props.modelValue,
-  (next) => {
-    if (next !== undefined && next !== draft.value) draft.value = next
-  }
-)
-watch(draft, (next) => emit('update:modelValue', next))
+})
 
 const run = computed(() => runs.value[props.runKey])
 const rows = computed(() => Math.min(18, Math.max(3, draft.value.split('\n').length)))

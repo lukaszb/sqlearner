@@ -4,6 +4,7 @@ import type { ProgressUpdate, QueryResult, SessionSummary, SqlQueryTab, TablePre
 export type AppView = WorkspaceView
 
 interface AppState {
+  workspaceReady: boolean
   sessions: SessionSummary[]
   activeSessionId?: string
   activeView: AppView
@@ -36,6 +37,7 @@ function createQueryTab(index: number): SqlQueryTab {
 
 export const useAppStore = defineStore('app', {
   state: (): AppState => ({
+    workspaceReady: false,
     sessions: [],
     activeSessionId: undefined,
     activeView: 'database',
@@ -113,13 +115,20 @@ export const useAppStore = defineStore('app', {
     },
     async selectSession(sessionId: string) {
       if (!window.sqlearner) return
+      this.workspaceReady = false
       const updated = await window.sqlearner.activateSession(sessionId)
       const index = this.sessions.findIndex((session) => session.id === sessionId)
       if (index !== -1) this.sessions[index] = updated
       this.activeSessionId = sessionId
+      const workspace = await window.sqlearner.loadSessionWorkspace(sessionId)
+      this.queryTabs = workspace.queryTabs ?? [createQueryTab(1)]
+      this.activeQueryTabId = workspace.activeQueryTabId ?? this.queryTabs[0]?.id
+      this.selectedTable = workspace.selectedTable
+      this.workspaceReady = true
       await this.loadTables()
     },
     closeSession() {
+      this.workspaceReady = false
       this.activeSessionId = undefined
       this.tables = []
       this.selectedTable = undefined

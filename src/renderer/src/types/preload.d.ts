@@ -10,6 +10,9 @@ import type {
 } from '@/shared/types'
 
 interface SQLearnerApi {
+  exportSession: (sessionId: string) => Promise<boolean>
+  importSession: () => Promise<SessionSummary | undefined>
+  recordSessionEvent: (sessionId: string, event: { type: string; data: unknown }) => Promise<void>
   listSessions: () => Promise<SessionSummary[]>
   activateSession: (sessionId: string) => Promise<SessionSummary>
   getLastOpenedSessionId: () => Promise<string | undefined>

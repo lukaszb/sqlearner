@@ -1,4 +1,5 @@
 import { app, shell } from 'electron'
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import type { SessionSummary } from '@/shared/types.js'
@@ -57,6 +58,7 @@ export async function createPreparingSession(): Promise<SessionSummary> {
 
   const session: SessionSummary = {
     id,
+    seed: randomUUID(),
     name: `SQLearner ${new Date().toLocaleString()}`,
     folderPath,
     databasePath: path.join(folderPath, 'olist.sqlite'),

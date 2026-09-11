@@ -2,6 +2,7 @@ export type SessionStatus = 'ready' | 'preparing' | 'failed'
 
 export interface SessionSummary {
   id: string
+  seed?: string
   name: string
   folderPath: string
   /** The untouched database built by the import; only ever read to rebuild the working copy. */
@@ -59,6 +60,8 @@ export interface QuizItemSnapshot {
   options: string[]
   selected?: string
   queryDraft: string
+  queryResult?: QueryResult
+  queryError?: string
 }
 
 export interface QuizSnapshot {
@@ -75,6 +78,9 @@ export interface QuizSnapshot {
 
 /** The resumable part of the lesson UI. Completion data remains in lesson-progress.json. */
 export interface LessonWorkspaceState {
+  disclosures?: Record<string, boolean>
+  drawCount?: number
+  runs?: Record<string, { running: boolean; result?: QueryResult; error?: string }>
   expandedModules: string[]
   selection?: LessonSelectionSnapshot
   quiz?: QuizSnapshot
@@ -84,6 +90,9 @@ export interface LessonWorkspaceState {
 
 export interface SessionWorkspaceState {
   activeView: WorkspaceView
+  queryTabs?: SqlQueryTab[]
+  activeQueryTabId?: string
+  selectedTable?: string
   lessons: LessonWorkspaceState
 }
 
